@@ -5,15 +5,20 @@ import { useFirestore } from '../provider';
 import { errorEmitter } from '../error-emitter';
 import { FirestorePermissionError } from '../errors';
 
-export function useCollection<T>(path: string) {
+export function useCollection<T>(path: string | null) {
   const db = useFirestore();
   const [data, setData] = useState<T[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<FirestoreError | null>(null);
 
   useEffect(() => {
-    if (!db) return;
+    if (!db || !path) {
+      setLoading(false);
+      setData(null);
+      return;
+    }
 
+    setLoading(true);
     const collectionRef = collection(db, path);
     const unsubscribe = onSnapshot(
       collectionRef,
