@@ -9,14 +9,14 @@ import { useUser, useDoc } from '@/firebase';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { UserProfile } from '@/lib/types';
 
-export default function DashboardPage() {
+function DashboardContent() {
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
   
-  // Fetch user profile from Firestore
+  // Fetch user profile from Firestore, only if user is available
   const { data: userProfile, loading: profileLoading } = useDoc<UserProfile>(user ? `users/${user.uid}` : '');
 
-  const loading = userLoading || profileLoading;
+  const loading = userLoading || (user && profileLoading);
 
   useEffect(() => {
     if (!loading) {
@@ -47,4 +47,10 @@ export default function DashboardPage() {
       <PaymentTable initialPayments={payments} residents={residents} />
     </div>
   );
+}
+
+
+export default function DashboardPage() {
+    // We wrap the content in a component that can use the hooks conditionally
+    return <DashboardContent />;
 }
