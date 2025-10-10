@@ -4,27 +4,23 @@ import { useCollection, useDoc, useUser } from '@/firebase';
 import type { UserProfile } from '@/lib/types';
 import UsersTable from '@/components/users-table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function UsersPage() {
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
 
-  // 1. Fetch the current user's profile to check their role.
-  const { data: currentUserProfile, loading: profileLoading } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const userProfilePath = useMemo(() => (user ? `users/${user.uid}` : null), [user]);
+  const { data: currentUserProfile, loading: profileLoading } = useDoc<UserProfile>(userProfilePath);
 
-  // 2. Determine if the current user is an admin after their profile has loaded.
-  const isAdmin = !profileLoading && currentUserProfile?.role === 'admin';
+  const isAdmin = useMemo(() => currentUserProfile?.role === 'admin', [currentUserProfile]);
 
-  // 3. Conditionally fetch all users ONLY if the current user is confirmed to be an admin.
-  const { data: users, loading: usersLoading } = useCollection<UserProfile>(
-    isAdmin ? 'users' : null
-  );
+  const usersCollectionPath = useMemo(() => (isAdmin ? 'users' : null), [isAdmin]);
+  const { data: users, loading: usersLoading } = useCollection<UserProfile>(usersCollectionPath);
 
-  // Determine overall loading state
   const isLoading = userLoading || profileLoading || (isAdmin && usersLoading);
-  
+
   useEffect(() => {
     // If auth is done loading and there's no user, redirect to login.
     if (!userLoading && !user) {
@@ -37,8 +33,6 @@ export default function UsersPage() {
     }
   }, [user, userLoading, currentUserProfile, profileLoading, router]);
 
-  // Show a skeleton loader while we verify auth state and admin role.
-  // This also correctly handles the case where a non-admin is about to be redirected.
   if (isLoading || !isAdmin) {
     return (
       <div className="flex flex-col gap-8">
