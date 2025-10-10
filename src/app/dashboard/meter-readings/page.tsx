@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { addDoc, collection, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, query, orderBy, getDocs } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
@@ -42,7 +42,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { useUser, useDoc, useCollection, useFirestore } from '@/firebase';
+import { useUser, useDoc, useFirestore } from '@/firebase';
 import type { UserProfile, MeterReading } from '@/lib/types';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -67,48 +67,71 @@ export default function MeterReadingsPage() {
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
+  
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [readings, setReadings] = useState<MeterReading[]>([]);
+  const [pageLoading, setPageLoading] = useState(true);
 
   const userProfilePath = useMemo(() => (user ? `users/${user.uid}` : null), [user]);
   const { data: currentUserProfile, loading: profileLoading } = useDoc<UserProfile>(userProfilePath);
-
+  
   const canRecord = useMemo(() => currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'petugas', [currentUserProfile]);
-  
-  const usersQueryPath = useMemo(() => (canRecord ? 'users' : null), [canRecord]);
-  const readingsQueryPath = useMemo(() => (canRecord ? 'meterReadings' : null), [canRecord]);
 
-  const { data: users, loading: usersLoading } = useCollection<UserProfile>(usersQueryPath);
-  
-  // Create the query object for readings separately to apply sorting
-  const readingsQuery = useMemo(() => {
-    if (canRecord && firestore) {
-      return query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc'));
+  useEffect(() => {
+    if (userLoading || profileLoading) return;
+    
+    if (!user) {
+      router.push('/');
+      return;
     }
-    return null;
-  }, [canRecord, firestore]);
-  
-  // useCollection now accepts a query object or a string path
-  // Since we need to order, we pass the query object's path.
-  // Note: The hook itself uses onSnapshot on the path, so ordering is client-side if we just pass `readingsQuery.path`.
-  // Let's modify useCollection slightly to accept a query object, or just sort client-side for now.
-  // For simplicity, we'll sort on the client.
-  const { data: readingsData, loading: readingsLoading } = useCollection<MeterReading>(readingsQueryPath);
-  
-  const readings = useMemo(() => {
-    if (!readingsData) return [];
-    return readingsData.sort((a, b) => {
-        const aDate = (a.recordedAt as any)?.seconds || 0;
-        const bDate = (b.recordedAt as any)?.seconds || 0;
-        return bDate - aDate;
-    });
-  }, [readingsData]);
 
+    if (!canRecord) {
+      toast({
+        variant: 'destructive',
+        title: 'Access Denied',
+        description: 'You do not have permission to view this page.',
+      });
+      router.push('/dashboard');
+      return;
+    }
+
+    async function fetchData() {
+        if (!firestore) return;
+        setPageLoading(true);
+        try {
+            // Fetch all users for the dropdown
+            const usersQuery = query(collection(firestore, 'users'));
+            const usersSnapshot = await getDocs(usersQuery);
+            const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserProfile));
+            setUsers(usersData);
+
+            // Fetch all meter readings
+            const readingsQuery = query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc'));
+            const readingsSnapshot = await getDocs(readingsQuery);
+            const readingsData = readingsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MeterReading));
+            setReadings(readingsData);
+
+        } catch (error: any) {
+            console.error("Failed to fetch data:", error);
+            toast({
+                variant: 'destructive',
+                title: 'Failed to load data',
+                description: error.message || 'Could not fetch necessary data. Check permissions.',
+            });
+        } finally {
+            setPageLoading(false);
+        }
+    }
+
+    if (canRecord) {
+        fetchData();
+    }
+
+  }, [user, userLoading, currentUserProfile, profileLoading, canRecord, firestore, router, toast]);
 
   const userMap = useMemo(() => {
-    if (!users) return new Map();
     return new Map(users.map(u => [u.uid, u.fullName]));
   }, [users]);
-
-  const isLoading = userLoading || profileLoading || (canRecord && (usersLoading || readingsLoading));
 
   const form = useForm<ReadingFormValues>({
     resolver: zodResolver(readingSchema),
@@ -119,27 +142,6 @@ export default function MeterReadingsPage() {
       residentId: '',
     },
   });
-
-  useEffect(() => {
-    // Wait until loading is done to make a decision
-    if (userLoading || profileLoading) return;
-
-    // If loading is done and there's no user, redirect to login
-    if (!user) {
-      router.push('/');
-      return;
-    }
-    
-    // If loading is done and we have a profile, check role
-    if (currentUserProfile && !(currentUserProfile.role === 'admin' || currentUserProfile.role === 'petugas')) {
-       toast({
-        variant: 'destructive',
-        title: 'Access Denied',
-        description: 'You do not have permission to view this page.',
-      });
-      router.push('/dashboard');
-    }
-  }, [user, userLoading, currentUserProfile, profileLoading, router, toast]);
 
   const onSubmit = async (data: ReadingFormValues) => {
     if (!firestore || !user) return;
@@ -152,31 +154,40 @@ export default function MeterReadingsPage() {
 
     const collectionRef = collection(firestore, 'meterReadings');
     
-    addDoc(collectionRef, newReading)
-      .then(() => {
+    try {
+        const docRef = await addDoc(collectionRef, newReading);
         toast({
-          title: 'Reading Recorded',
-          description: `Meter reading for ${userMap.get(data.residentId)} has been recorded.`,
-          className: 'bg-green-100 border-green-300 text-green-900',
+            title: 'Reading Recorded',
+            description: `Meter reading for ${userMap.get(data.residentId)} has been recorded.`,
+            className: 'bg-green-100 border-green-300 text-green-900',
         });
+        
+        // Optimistically update the UI
+        const optimisticReading: MeterReading = {
+            ...newReading,
+            id: docRef.id,
+            recordedAt: new Date(), // Use current date for immediate feedback
+        };
+        setReadings(prev => [optimisticReading, ...prev]);
+
         form.reset({
-          month: new Date().getMonth() + 1,
-          year: new Date().getFullYear(),
-          reading: 0,
-          residentId: ''
+            month: new Date().getMonth() + 1,
+            year: new Date().getFullYear(),
+            reading: 0,
+            residentId: ''
         });
-      })
-      .catch((serverError) => {
+
+    } catch (serverError) {
         const permissionError = new FirestorePermissionError({
-          path: collectionRef.path,
-          operation: 'create',
-          requestResourceData: newReading,
+            path: collectionRef.path,
+            operation: 'create',
+            requestResourceData: newReading,
         });
         errorEmitter.emit('permission-error', permissionError);
-      });
+    }
   };
 
-  if (isLoading || !canRecord) {
+  if (userLoading || profileLoading || pageLoading) {
     return (
        <div className="grid gap-8 lg:grid-cols-3">
         <div className="lg:col-span-1">
@@ -313,7 +324,7 @@ export default function MeterReadingsPage() {
                         <TableCell>
                             {reading.recordedAt && (reading.recordedAt as any).seconds ? 
                                 format(new Date((reading.recordedAt as any).seconds * 1000), 'dd MMMM yyyy, HH:mm', { locale: id }) 
-                                : 'Recording...'}
+                                : 'Just now'}
                         </TableCell>
                         <TableCell>{userMap.get(reading.recordedBy) || 'Unknown'}</TableCell>
                         </TableRow>
