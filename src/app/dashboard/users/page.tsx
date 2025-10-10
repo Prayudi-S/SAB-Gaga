@@ -16,20 +16,26 @@ export default function UsersPage() {
 
   const isAdmin = useMemo(() => currentUserProfile?.role === 'admin', [currentUserProfile]);
 
+  // IMPORTANT: Only fetch the collection if the user is confirmed to be an admin.
+  // The 'users' string will only be passed to useCollection if isAdmin is true. Otherwise, it's null.
   const { data: users, loading: usersLoading } = useCollection<UserProfile>(isAdmin ? 'users' : null);
 
   const isLoading = userLoading || profileLoading || (isAdmin && usersLoading);
 
+  // Effect to handle redirection based on auth state and role
   useEffect(() => {
+    // If user loading is finished and there's no user, redirect to login
     if (!userLoading && !user) {
       router.push('/');
       return;
     }
+    // If profile loading is finished and the user is NOT an admin, redirect to dashboard
     if (!profileLoading && currentUserProfile && currentUserProfile.role !== 'admin') {
       router.push('/dashboard');
     }
   }, [user, userLoading, currentUserProfile, profileLoading, router]);
 
+  // Show a full-page loading skeleton until we know the user's role and have their data.
   if (isLoading || !isAdmin) {
     return (
       <div className="flex flex-col gap-8">
@@ -49,6 +55,7 @@ export default function UsersPage() {
     );
   }
 
+  // Only render the table if the user is an admin and the data has been loaded.
   return (
     <div className="flex flex-col gap-8">
       <div>
