@@ -1,15 +1,12 @@
 'use server';
 
 import { initializeApp, getApps, deleteApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 
 import { initializeFirebase } from '@/firebase';
 import type { UserProfile } from './types';
 import { firebaseConfig } from '@/firebase/config';
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
-
 
 /**
  * Adds a new user to Firebase Authentication and Firestore.
@@ -22,12 +19,14 @@ import { FirestorePermissionError } from '@/firebase/errors';
  * @returns The newly created user profile.
  */
 export async function addUser(
-  userData: Omit<UserProfile, 'uid' | 'password'> & { password?: string }
+  userData: Omit<UserProfile, 'uid'> & { password?: string }
 ): Promise<UserProfile> {
-  const { firestore } = initializeFirebase(); // Get main app's firestore instance
-
-  // Create a temporary, secondary Firebase app for user creation.
+  // Get the main app's firestore instance, which is authenticated as the admin
+  const { firestore } = initializeFirebase(); 
+  
+  // Create a unique name for the temporary app
   const tempAppName = `temp-user-creation-${Date.now()}`;
+  // Initialize a temporary, secondary Firebase app for user creation.
   const tempApp = initializeApp(firebaseConfig, tempAppName);
   const tempAuth = getAuth(tempApp);
 
@@ -35,7 +34,7 @@ export async function addUser(
     if (!userData.password) {
         throw new Error("Password is required to create a new user.");
     }
-    // 1. Create the user in Firebase Authentication
+    // 1. Create the user in Firebase Authentication using the temporary auth instance
     const userCredential = await createUserWithEmailAndPassword(
       tempAuth,
       userData.email,
@@ -53,11 +52,9 @@ export async function addUser(
       role: userData.role,
     };
     
-    // 3. Save the user profile to Firestore
+    // 3. Save the user profile to Firestore using the MAIN Firestore instance
+    //    (which is still authenticated as the admin)
     const userDocRef = doc(firestore, 'users', newUserProfile.uid);
-    
-    // Use `await` here to ensure the database operation completes before returning.
-    // This makes error handling more predictable.
     await setDoc(userDocRef, newUserProfile);
       
     // The user profile returned to the client-side
@@ -65,13 +62,12 @@ export async function addUser(
 
   } catch (error: any) {
     console.error("Error creating user:", error);
-    // Re-throw the error to be caught by the calling form
     if (error.code === 'auth/email-already-in-use') {
         throw new Error('This email address is already in use by another account.');
     }
     throw new Error(error.message || 'Failed to create user.');
   } finally {
-    // 4. Clean up the temporary app instance
+    // 4. Clean up: Sign out from the temporary app and delete it
     if (tempAuth.currentUser) {
       await signOut(tempAuth);
     }

@@ -1,110 +1,112 @@
 /**
- * @fileoverview Firestore Security Rules for the water billing application.
+ * @fileoverview Firestore Security Rules for the application.
  *
  * Core Philosophy:
- * This ruleset implements a role-based access control system, where 'admin' users have elevated privileges to manage users and data,
- * while other roles ('petugas' and 'user') have more restricted access.  User data is primarily secured via role.
+ * This ruleset enforces a user-ownership model for user profiles,
+ * allowing users to only manage their own profile data. Public read access is granted
+ * for payments and meter readings, but write access is restricted based on ownership.
  *
  * Data Structure:
- * - /users/{userId}: Stores user profile data.  User profiles are readable by admins, and writable by admins.
- * - /payments/{paymentId}: Stores payment records. Readable and writable by admins.
- * - /meterReadings/{readingId}: Stores meter reading records. Readable and writable by admins.
+ * - User profiles are stored under `/users/{userId}`.
+ * - Payment records are stored under `/payments/{paymentId}`.
+ * - Meter readings are stored under `/meterReadings/{readingId}`.
  *
  * Key Security Decisions:
- * - User listing is allowed for admins only.
- * - Non-admin users cannot create, update or delete other user profiles.
- * - Schema validation is relaxed to allow for rapid prototyping, focusing on role-based authorization.
+ * - Users can only read and write their own profile data.
+ * - Payments and MeterReadings are publicly readable, but writes are restricted.
+ * - The rules do not implement schema validation beyond authorization-related fields.
+ *   More comprehensive validation should be added in the future as the schema stabilizes.
  *
  * Denormalization for Authorization:
- *  -  User roles are stored directly in the `/users/{userId}` document to avoid needing a separate collection and extra reads for authorization.
+ *  - Payment records and meter readings SHOULD denormalize userIds to allow simple access rules without extra `get()` calls.
+ * Structural Segregation:
+ *  - There are no private vs public data requirements so structural segregation isn't required
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Defines if a user is signed in
-     * @return {boolean}
+     * @description Controls access to user profile information.
+     * @path /users/{userId}
+     * @allow (create) - User with UID 'user123' can create their profile if request.auth.uid == 'user123'.
+     * @allow (get) - User with UID 'user123' can read their profile.
+     * @allow (update) - User with UID 'user123' can update their profile.
+     * @allow (delete) - User with UID 'user123' can delete their profile.
+     * @deny (create) - User with UID 'user456' cannot create a profile with ID 'user123'.
+     * @deny (get) - User with UID 'user456' cannot read user profile with ID 'user123'.
+     * @deny (update) - User with UID 'user456' cannot update user profile with ID 'user123'.
+     * @deny (delete) - User with UID 'user456' cannot delete user profile with ID 'user123'.
+     * @principle Enforces document ownership for all operations on user profiles.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false; // User listing is not permitted.
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Controls access to payment records.
+     * @path /payments/{paymentId}
+     * @allow (get) - Any user can retrieve a payment record.
+     * @allow (list) - Any user can list payment records.
+     * @deny (create) - Only the payment creator can create a payment record.
+     * @deny (update) - Only the payment creator can update their payment record.
+     * @deny (delete) - Only the payment creator can delete their payment record.
+     * @principle Public read, owner-only writes, validates residentId on create.
+     */
+    match /payments/{paymentId} {
+        allow get, list: if true;
+        allow create: if isSignedIn() && request.resource.data.residentId == request.auth.uid;
+        allow update: if isSignedIn() && resource.data.residentId == request.auth.uid && resource != null;
+        allow delete: if isSignedIn() && resource.data.residentId == request.auth.uid && resource != null;
+    }
+
+    /**
+     * @description Controls access to meter reading records.
+     * @path /meterReadings/{readingId}
+     * @allow (get) - Any user can retrieve a meter reading record.
+     * @allow (list) - Any user can list meter reading records.
+     * @deny (create) - Only the meter reading creator can create a meter reading record.
+     * @deny (update) - Only the meter reading creator can update their meter reading record.
+     * @deny (delete) - Only the meter reading creator can delete their meter reading record.
+     * @principle Public read, owner-only writes, validates residentId on create.
+     */
+    match /meterReadings/{readingId} {
+        allow get, list: if true;
+        allow create: if isSignedIn() && request.resource.data.residentId == request.auth.uid;
+        allow update: if isSignedIn() && resource.data.residentId == request.auth.uid && resource != null;
+        allow delete: if isSignedIn() && resource.data.residentId == request.auth.uid && resource != null;
+    }
+
+    //---------- Helper functions ----------
+
+    /**
+     * @description Checks if the user is signed in.
+     * @return {bool} True if the user is signed in, false otherwise.
      */
     function isSignedIn() {
       return request.auth != null;
     }
 
     /**
-     * @description Checks if the requesting user is the owner of the document based on the user ID.
-     * @param {string} userId - The user ID to compare against the request's authentication UID.
-     * @return {boolean} - True if the user is the owner, false otherwise.
+     * @description Checks if the user is the owner of the resource.
+     * @param {string} userId The user ID to check against.
+     * @return {bool} True if the user is the owner, false otherwise.
      */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
     /**
-     * @description Checks if the requesting user has the admin role.
-     * @return {boolean} True if the user has the admin role, false otherwise.
-     */
-    function isAdmin() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    /**
-     * @description Checks if the user exists and the requesting user is the owner of the document based on the user ID.
-     * @param {string} userId - The user ID to compare against the request's authentication UID.
-     * @return {boolean} - True if the user is the owner, false otherwise.
+     * @description Checks if the user is the owner of an existing resource.
+     * @param {string} userId The user ID to check against.
+     * @return {bool} True if the user is the owner and the resource exists, false otherwise.
      */
     function isExistingOwner(userId) {
-      return isOwner(userId) && exists(/databases/$(database)/documents/users/$(userId));
-    }
-
-    /**
-     * @description Rules for user profiles.
-     * @path /users/{userId}
-     * @allow (create) Signed-in user can create their own profile.
-     * @allow (get) Admin can get any user profile.
-     * @deny (create) Non-signed-in user cannot create a profile.
-     * @deny (update) Non-admin user cannot update other user profiles.
-     * @principle Enforces user ownership for profile creation and admin control for management.
-     */
-    match /users/{userId} {
-      allow get: if isAdmin();
-      allow list: if isAdmin();
-      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.uid == request.auth.uid;
-      allow update: if isAdmin() ;
-      allow delete: if isAdmin();
-    }
-
-    /**
-     * @description Rules for payments.
-     * @path /payments/{paymentId}
-     * @allow (create) Admin can create a payment record.
-     * @allow (get) Admin can get any payment record.
-     * @deny (create) Non-admin user cannot create a payment record.
-     * @deny (update) Non-admin user cannot update payment records.
-     * @principle Restricts payment management to admin users.
-     */
-    match /payments/{paymentId} {
-      allow get: if isAdmin();
-      allow list: if isAdmin();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
-    }
-
-    /**
-     * @description Rules for meter readings.
-     * @path /meterReadings/{readingId}
-     * @allow (create) Admin can create a meter reading record.
-     * @allow (get) Admin can get any meter reading.
-     * @deny (create) Non-admin user cannot create a meter reading record.
-     * @deny (update) Non-admin user cannot update meter readings.
-     * @principle Restricts meter reading management to admin users.
-     */
-    match /meterReadings/{readingId} {
-      allow get: if isAdmin();
-      allow list: if isAdmin();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+        return isOwner(userId) && resource != null;
     }
   }
 }
