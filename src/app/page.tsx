@@ -53,8 +53,8 @@ export default function LoginPage() {
         </Card>
         <p className="text-center text-sm text-muted-foreground mt-6">
             New user?{" "}
-            <Link href="#" className="font-semibold text-primary hover:underline">
-                Contact administrator
+            <Link href="/register" className="font-semibold text-primary hover:underline">
+                Register here
             </Link>
         </p>
       </div>

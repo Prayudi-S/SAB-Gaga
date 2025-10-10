@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Represents a user's profile in the system.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The user's unique ID."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "The user's email address."
+        },
+        "fullName": {
+          "type": "string",
+          "description": "The user's full name."
+        },
+        "houseNumber": {
+          "type": "string",
+          "description": "The user's house number."
+        },
+        "meterId": {
+          "type": "string",
+          "description": "The user's water meter ID."
+        }
+      },
+      "required": ["uid", "email", "fullName", "houseNumber", "meterId"]
+    }
+  },
+  "auth": {
+    "providers": ["email_password"]
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Stores user profile information."
+    }
+  }
+}
