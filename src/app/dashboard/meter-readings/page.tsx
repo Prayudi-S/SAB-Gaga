@@ -112,22 +112,42 @@ export default function MeterReadingsPage() {
         setPageLoading(true);
         try {
             const usersQuery = query(collection(firestore, 'users'));
-            const usersSnapshot = await getDocs(usersQuery);
-            const usersData = usersSnapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile));
-            setUsers(usersData);
+            await getDocs(usersQuery).then(
+              (usersSnapshot) => {
+                const usersData = usersSnapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile));
+                setUsers(usersData);
+              },
+              (serverError) => {
+                 const permissionError = new FirestorePermissionError({
+                    path: 'users',
+                    operation: 'list',
+                });
+                errorEmitter.emit('permission-error', permissionError);
+              }
+            );
 
             const readingsQuery = query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc'));
-            const readingsSnapshot = await getDocs(readingsQuery);
-            const readingsData = readingsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MeterReading));
-            setReadings(readingsData);
+            await getDocs(readingsQuery).then(
+              (readingsSnapshot) => {
+                const readingsData = readingsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MeterReading));
+                setReadings(readingsData);
+              },
+              (serverError) => {
+                const permissionError = new FirestorePermissionError({
+                    path: 'meterReadings',
+                    operation: 'list',
+                });
+                errorEmitter.emit('permission-error', permissionError);
+              }
+            );
 
         } catch (error: any) {
-            console.error("Failed to fetch data:", error);
+            // This catch is for any other unexpected errors during setup
             if (!(error instanceof FirestorePermissionError)) {
                toast({
                     variant: 'destructive',
                     title: 'Failed to load data',
-                    description: error.message || 'Could not fetch necessary data from Firestore.',
+                    description: error.message || 'An unexpected error occurred.',
                 });
             }
         } finally {
@@ -356,3 +376,5 @@ export default function MeterReadingsPage() {
     </div>
   );
 }
+
+    
