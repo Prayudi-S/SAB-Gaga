@@ -12,6 +12,7 @@ export type Payment = {
   year: number;
   status: 'Paid' | 'Unpaid';
   paymentDate?: string;
+  meterReadingId?: string;
 };
 
 export type UserProfile = {

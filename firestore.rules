@@ -1,112 +1,90 @@
 /**
- * @fileoverview Firestore Security Rules for the application.
+ * @fileoverview Firestore Security Rules for the Water Management App.
  *
  * Core Philosophy:
- * This ruleset enforces a user-ownership model for user profiles,
- * allowing users to only manage their own profile data. Public read access is granted
- * for payments and meter readings, but write access is restricted based on ownership.
+ * This ruleset enforces a user-ownership model for user profiles, allowing each user to read and write their own profile data.
+ * Payments and meter readings are publicly readable but can only be created, updated, or deleted by authenticated users.
  *
  * Data Structure:
- * - User profiles are stored under `/users/{userId}`.
- * - Payment records are stored under `/payments/{paymentId}`.
- * - Meter readings are stored under `/meterReadings/{readingId}`.
+ * - /users/{userId}: Stores user profile information.
+ * - /payments/{paymentId}: Stores payment records.
+ * - /meterReadings/{readingId}: Stores water meter readings.
  *
  * Key Security Decisions:
- * - Users can only read and write their own profile data.
- * - Payments and MeterReadings are publicly readable, but writes are restricted.
- * - The rules do not implement schema validation beyond authorization-related fields.
- *   More comprehensive validation should be added in the future as the schema stabilizes.
+ * - Users can only manage their own profiles.
+ * - Payments and meter readings can be read by anyone, but writes are restricted to authenticated users.
  *
  * Denormalization for Authorization:
- *  - Payment records and meter readings SHOULD denormalize userIds to allow simple access rules without extra `get()` calls.
- * Structural Segregation:
- *  - There are no private vs public data requirements so structural segregation isn't required
+ * - The `UserProfile` entity uses the `uid` field as the document ID.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Controls access to user profile information.
+     * @description Controls access to user profile documents.
      * @path /users/{userId}
-     * @allow (create) - User with UID 'user123' can create their profile if request.auth.uid == 'user123'.
-     * @allow (get) - User with UID 'user123' can read their profile.
-     * @allow (update) - User with UID 'user123' can update their profile.
-     * @allow (delete) - User with UID 'user123' can delete their profile.
-     * @deny (create) - User with UID 'user456' cannot create a profile with ID 'user123'.
-     * @deny (get) - User with UID 'user456' cannot read user profile with ID 'user123'.
-     * @deny (update) - User with UID 'user456' cannot update user profile with ID 'user123'.
-     * @deny (delete) - User with UID 'user456' cannot delete user profile with ID 'user123'.
+     * @allow (get, list) if isSignedIn() && isOwner(userId) - Allows a signed-in user to read their own profile.
+     * @allow (create) if isSignedIn() && isOwner(userId) - Allows a signed-in user to create their own profile.
+     * @allow (update) if isSignedIn() && isOwner(userId) - Allows a signed-in user to update their own profile.
+     * @allow (delete) if isSignedIn() && isOwner(userId) - Allows a signed-in user to delete their own profile.
+     * @deny (get, list) if !isSignedIn() || !isOwner(userId) - Denies access to profile for non-signed-in users or other users.
+     * @deny (create) if !isSignedIn() || !isOwner(userId) - Denies profile creation for non-signed-in users or other users.
+     * @deny (update) if !isSignedIn() || !isOwner(userId) - Denies profile update for non-signed-in users or other users.
+     * @deny (delete) if !isSignedIn() || !isOwner(userId) - Denies profile deletion for non-signed-in users or other users.
      * @principle Enforces document ownership for all operations on user profiles.
      */
     match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow list: if false; // User listing is not permitted.
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update: if isExistingOwner(userId);
-      allow delete: if isExistingOwner(userId);
+      allow get, list: if isSignedIn() && isOwner(userId);
+      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.uid == userId;
+      allow update: if isSignedIn() && isOwner(userId) && resource.data.uid == userId;
+      allow delete: if isSignedIn() && isOwner(userId) && resource != null;
     }
 
     /**
-     * @description Controls access to payment records.
+     * @description Controls access to payment documents.
      * @path /payments/{paymentId}
-     * @allow (get) - Any user can retrieve a payment record.
-     * @allow (list) - Any user can list payment records.
-     * @deny (create) - Only the payment creator can create a payment record.
-     * @deny (update) - Only the payment creator can update their payment record.
-     * @deny (delete) - Only the payment creator can delete their payment record.
-     * @principle Public read, owner-only writes, validates residentId on create.
+     * @allow (get, list) if true - Allows anyone to read payment records.
+     * @allow (create) if isSignedIn() - Allows signed-in users to create payment records.
+     * @allow (update) if isSignedIn() - Allows signed-in users to update payment records.
+     * @allow (delete) if isSignedIn() - Allows signed-in users to delete payment records.
+     * @deny (create) if !isSignedIn() - Denies payment record creation for non-signed-in users.
+     * @deny (update) if !isSignedIn() - Denies payment record update for non-signed-in users.
+     * @deny (delete) if !isSignedIn() - Denies payment record deletion for non-signed-in users.
+     * @principle Allows public read access but restricts writes to authenticated users.
      */
     match /payments/{paymentId} {
-        allow get, list: if true;
-        allow create: if isSignedIn() && request.resource.data.residentId == request.auth.uid;
-        allow update: if isSignedIn() && resource.data.residentId == request.auth.uid && resource != null;
-        allow delete: if isSignedIn() && resource.data.residentId == request.auth.uid && resource != null;
+      allow get, list: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource != null;
+      allow delete: if isSignedIn() && resource != null;
     }
 
     /**
-     * @description Controls access to meter reading records.
+     * @description Controls access to meter reading documents.
      * @path /meterReadings/{readingId}
-     * @allow (get) - Any user can retrieve a meter reading record.
-     * @allow (list) - Any user can list meter reading records.
-     * @deny (create) - Only the meter reading creator can create a meter reading record.
-     * @deny (update) - Only the meter reading creator can update their meter reading record.
-     * @deny (delete) - Only the meter reading creator can delete their meter reading record.
-     * @principle Public read, owner-only writes, validates residentId on create.
+     * @allow (get, list) if true - Allows anyone to read meter reading records.
+     * @allow (create) if isSignedIn() - Allows signed-in users to create meter reading records.
+     * @allow (update) if isSignedIn() - Allows signed-in users to update meter reading records.
+     * @allow (delete) if isSignedIn() - Allows signed-in users to delete meter reading records.
+     * @deny (create) if !isSignedIn() - Denies meter reading record creation for non-signed-in users.
+     * @deny (update) if !isSignedIn() - Denies meter reading record update for non-signed-in users.
+     * @deny (delete) if !isSignedIn() - Denies meter reading record deletion for non-signed-in users.
+     * @principle Allows public read access but restricts writes to authenticated users.
      */
     match /meterReadings/{readingId} {
-        allow get, list: if true;
-        allow create: if isSignedIn() && request.resource.data.residentId == request.auth.uid;
-        allow update: if isSignedIn() && resource.data.residentId == request.auth.uid && resource != null;
-        allow delete: if isSignedIn() && resource.data.residentId == request.auth.uid && resource != null;
+      allow get, list: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource != null;
+      allow delete: if isSignedIn() && resource != null;
     }
+  }
 
-    //---------- Helper functions ----------
+  function isSignedIn() {
+    return request.auth != null;
+  }
 
-    /**
-     * @description Checks if the user is signed in.
-     * @return {bool} True if the user is signed in, false otherwise.
-     */
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    /**
-     * @description Checks if the user is the owner of the resource.
-     * @param {string} userId The user ID to check against.
-     * @return {bool} True if the user is the owner, false otherwise.
-     */
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    /**
-     * @description Checks if the user is the owner of an existing resource.
-     * @param {string} userId The user ID to check against.
-     * @return {bool} True if the user is the owner and the resource exists, false otherwise.
-     */
-    function isExistingOwner(userId) {
-        return isOwner(userId) && resource != null;
-    }
+  function isOwner(userId) {
+    return request.auth.uid == userId;
   }
 }

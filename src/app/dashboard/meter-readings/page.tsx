@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
@@ -72,19 +72,13 @@ export default function MeterReadingsPage() {
   const { data: currentUserProfile, loading: profileLoading } = useDoc<UserProfile>(userProfilePath);
 
   const canRecord = useMemo(() => currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'petugas', [currentUserProfile]);
+  
+  const usersQuery = useMemo(() => (canRecord && firestore ? collection(firestore, 'users') : null), [canRecord, firestore]);
+  const readingsQuery = useMemo(() => (canRecord && firestore ? query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc')) : null), [canRecord, firestore]);
 
-  const { data: users, loading: usersLoading } = useCollection<UserProfile>(canRecord ? 'users' : null);
-  const { data: readings, loading: readingsLoading } = useCollection<MeterReading>(canRecord ? 'meterReadings' : null);
-  
-  const sortedReadings = useMemo(() => {
-    if (!readings) return [];
-    return readings.sort((a, b) => {
-        const dateA = a.recordedAt ? new Date((a.recordedAt as any).seconds * 1000) : new Date(0);
-        const dateB = b.recordedAt ? new Date((b.recordedAt as any).seconds * 1000) : new Date(0);
-        return dateB.getTime() - dateA.getTime();
-    });
-  }, [readings]);
-  
+  const { data: users, loading: usersLoading } = useCollection<UserProfile>(usersQuery?.path);
+  const { data: readings, loading: readingsLoading } = useCollection<MeterReading>(readingsQuery?.path);
+
   const userMap = useMemo(() => {
     if (!users) return new Map();
     return new Map(users.map(u => [u.uid, u.fullName]));
@@ -98,6 +92,7 @@ export default function MeterReadingsPage() {
       month: new Date().getMonth() + 1,
       year: new Date().getFullYear(),
       reading: 0,
+      residentId: '',
     },
   });
 
@@ -174,7 +169,7 @@ export default function MeterReadingsPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Resident</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Select a resident" />
@@ -212,7 +207,7 @@ export default function MeterReadingsPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Month</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={String(field.value)}>
+                        <Select onValueChange={field.onChange} value={String(field.value)}>
                           <FormControl>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                           </FormControl>
@@ -270,8 +265,8 @@ export default function MeterReadingsPage() {
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {sortedReadings.length > 0 ? (
-                    sortedReadings.map(reading => (
+                    {readings && readings.length > 0 ? (
+                    readings.map(reading => (
                         <TableRow key={reading.id}>
                         <TableCell className="font-medium">{userMap.get(reading.residentId) || 'Unknown'}</TableCell>
                         <TableCell>{months.find(m => m.value === reading.month)?.label} {reading.year}</TableCell>

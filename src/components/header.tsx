@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { LogOut, User, Droplets, Users, SlidersHorizontal } from "lucide-react";
+import { LogOut, User, Droplets, Users, SlidersHorizontal, BookText } from "lucide-react";
 import { getAuth, signOut } from "firebase/auth";
 import { useRouter, usePathname } from "next/navigation";
 
@@ -49,7 +49,7 @@ export default function Header() {
   const isAdminOrPetugas = userProfile?.role === 'admin' || userProfile?.role === 'petugas';
 
   const navLinkClasses = (href: string) => cn(
-    "transition-colors",
+    "transition-colors flex items-center gap-2",
     pathname === href ? "text-primary-foreground" : "text-primary-foreground/70 hover:text-primary-foreground"
   );
 
@@ -67,10 +67,12 @@ export default function Header() {
           </Link>
           {userProfile?.role === 'admin' && (
              <Link href="/dashboard/users" className={navLinkClasses("/dashboard/users")}>
+                <Users className="h-4 w-4" />
                 Users
             </Link>
           )}
            <Link href="/dashboard/meter-readings" className={navLinkClasses("/dashboard/meter-readings")}>
+            <BookText className="h-4 w-4" />
             Meter Readings
           </Link>
         </nav>
