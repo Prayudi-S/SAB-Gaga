@@ -1,27 +1,26 @@
 'use client';
 
-import { useCollection, useDoc, useUser } from '@/firebase';
+import { useDoc, useUser, useFirestore } from '@/firebase';
 import type { UserProfile } from '@/lib/types';
 import UsersTable from '@/components/users-table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { collection, getDocs } from 'firebase/firestore';
 
 export default function UsersPage() {
   const { user, loading: userLoading } = useUser();
+  const firestore = useFirestore();
   const router = useRouter();
 
   const { data: currentUserProfile, loading: profileLoading } = useDoc<UserProfile>(
-    user ? `users/${user.uid}` : null
+    user ? `users/${user.id}` : null
   );
+  
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
 
   const isAdmin = currentUserProfile?.role === 'admin';
-
-  const { data: users, loading: usersLoading } = useCollection<UserProfile>(
-    // Only fetch all users if the current user is an admin
-    isAdmin ? 'users' : null
-  );
-
   const isLoading = userLoading || profileLoading || (isAdmin && usersLoading);
 
   useEffect(() => {
@@ -34,7 +33,28 @@ export default function UsersPage() {
     if (!profileLoading && currentUserProfile && currentUserProfile.role !== 'admin') {
       router.push('/dashboard');
     }
-  }, [user, userLoading, currentUserProfile, profileLoading, router]);
+
+    // Fetch users only if the current user is an admin
+    if (isAdmin && firestore) {
+      const fetchUsers = async () => {
+        setUsersLoading(true);
+        try {
+          const usersSnapshot = await getDocs(collection(firestore, 'users'));
+          const usersData = usersSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UserProfile));
+          setUsers(usersData);
+        } catch (error) {
+          console.error("Failed to fetch users:", error);
+          // Handle error appropriately, maybe show a toast
+        } finally {
+          setUsersLoading(false);
+        }
+      };
+      fetchUsers();
+    } else if (!userLoading && !profileLoading && !isAdmin) {
+      // If user is determined not to be an admin, stop the users loading state
+      setUsersLoading(false);
+    }
+  }, [user, userLoading, currentUserProfile, profileLoading, isAdmin, firestore, router]);
 
   // Show a loading skeleton while we're verifying the user's role and fetching data
   if (isLoading) {

@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { addDoc, collection, serverTimestamp, query, orderBy, getDocs } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, query, orderBy, getDocs, where } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
@@ -49,7 +49,7 @@ import { FirestorePermissionError } from '@/firebase/errors';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const readingSchema = z.object({
-  residentId: z.string().min(1, 'Resident is required.'),
+  residentId: z.string().min(1, 'Resident UID is required.'),
   reading: z.coerce.number().min(0, 'Reading must be a positive number.'),
   month: z.coerce.number().min(1).max(12),
   year: z.coerce.number().min(2020).max(new Date().getFullYear() + 5),
@@ -72,65 +72,57 @@ export default function MeterReadingsPage() {
   const [readings, setReadings] = useState<MeterReading[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
 
-  const { data: currentUserProfile, loading: profileLoading } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
+  const { data: currentUserProfile, loading: profileLoading } = useDoc<UserProfile>(user ? `users/${user.id}` : null);
   
-  const canRecord = useMemo(() => currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'petugas', [currentUserProfile]);
+  const userRole = useMemo(() => currentUserProfile?.role, [currentUserProfile]);
 
   useEffect(() => {
-    // Wait until we know the user and their profile
     if (userLoading || profileLoading) {
       return; 
     }
 
-    // If no user, redirect to login
     if (!user) {
       router.push('/'); 
       return;
     }
     
-    // If the user does not have the required role, redirect them.
-    if (!canRecord) {
-      toast({
-          variant: 'destructive',
-          title: 'Access Denied',
-          description: 'You do not have permission to view this page.',
-      });
-      router.push('/dashboard');
-      return;
-    }
-
-    // Now that we know the user is authorized, fetch the necessary data
     async function fetchData() {
-        if (!firestore) return;
+        if (!firestore || !userRole) return;
         setPageLoading(true);
         try {
-            // Fetch all users for the dropdown
-            const usersQuery = query(collection(firestore, 'users'));
-            const usersSnapshot = await getDocs(usersQuery);
-            const usersData = usersSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UserProfile));
-            setUsers(usersData);
+            let readingsData: MeterReading[] = [];
+            // Admin/Petugas can see all readings and all users
+            if (userRole === 'admin' || userRole === 'petugas') {
+                const usersSnapshot = await getDocs(query(collection(firestore, 'users')));
+                const usersData = usersSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UserProfile));
+                setUsers(usersData);
 
-            // Fetch all readings for the history table
-            const readingsQuery = query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc'));
-            const readingsSnapshot = await getDocs(readingsQuery);
-            const readingsData = readingsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MeterReading));
+                const readingsSnapshot = await getDocs(query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc')));
+                readingsData = readingsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MeterReading));
+            } 
+            // Regular user can only see their own readings
+            else if (userRole === 'user') {
+                const readingsQuery = query(
+                    collection(firestore, 'meterReadings'), 
+                    where('residentId', '==', user.id),
+                    orderBy('recordedAt', 'desc')
+                );
+                const readingsSnapshot = await getDocs(readingsQuery);
+                readingsData = readingsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MeterReading));
+                // For a regular user, the 'users' map only needs their own profile
+                if(currentUserProfile) {
+                    setUsers([currentUserProfile]);
+                }
+            }
             setReadings(readingsData);
 
         } catch (error: any) {
             console.error("Error fetching data:", error);
-            if (error.code === 'permission-denied') {
-                 const permissionError = new FirestorePermissionError({
-                    path: error.customData?.path || 'users or meterReadings',
-                    operation: 'list',
-                });
-                errorEmitter.emit('permission-error', permissionError);
-            } else {
-               toast({
-                    variant: 'destructive',
-                    title: 'Failed to load data',
-                    description: error.message || 'An unexpected error occurred.',
-                });
-            }
+            const permissionError = new FirestorePermissionError({
+                path: error.customData?.path || 'users or meterReadings',
+                operation: 'list',
+            });
+            errorEmitter.emit('permission-error', permissionError);
         } finally {
             setPageLoading(false);
         }
@@ -138,7 +130,7 @@ export default function MeterReadingsPage() {
 
     fetchData();
     
-  }, [user, userLoading, currentUserProfile, profileLoading, canRecord, firestore, router, toast]);
+  }, [user, userLoading, currentUserProfile, profileLoading, userRole, firestore, router, toast]);
 
   const userMap = useMemo(() => {
     return new Map(users.map(u => [u.id, u.fullName]));
@@ -159,7 +151,7 @@ export default function MeterReadingsPage() {
 
     const newReadingData = {
       ...data,
-      recordedBy: user.uid,
+      recordedBy: user.id,
       recordedAt: serverTimestamp(),
     };
 
@@ -168,7 +160,7 @@ export default function MeterReadingsPage() {
     addDoc(collectionRef, newReadingData).then(docRef => {
         toast({
             title: 'Reading Recorded',
-            description: `Meter reading for ${userMap.get(data.residentId)} has been recorded.`,
+            description: `Meter reading has been recorded for user UID ${data.residentId}.`,
             className: 'bg-green-100 border-green-300 text-green-900',
         });
         
@@ -195,33 +187,29 @@ export default function MeterReadingsPage() {
     });
   };
   
-  // Display a skeleton loader while verifying auth, role, and fetching initial data
   if (userLoading || profileLoading || pageLoading) {
+    const isOperator = userRole === 'admin' || userRole === 'petugas';
     return (
-       <div className="grid gap-8 lg:grid-cols-3">
-        <div className="lg:col-span-1">
-            <Skeleton className="h-[550px] w-full" />
-        </div>
-        <div className="lg:col-span-2">
+       <div className={`grid gap-8 ${isOperator ? 'lg:grid-cols-3' : 'lg:grid-cols-1'}`}>
+        {isOperator && (
+            <div className="lg:col-span-1">
+                <Skeleton className="h-[550px] w-full" />
+            </div>
+        )}
+        <div className={isOperator ? "lg:col-span-2" : "lg:col-span-1"}>
             <Skeleton className="h-[550px] w-full" />
         </div>
       </div>
     );
   }
-  
-  // This will be true if the useEffect has redirected
-  if (!canRecord) {
-      return null;
-  }
 
-  return (
-    <div className="grid gap-8 lg:grid-cols-3">
+  const renderFormForOperators = () => (
       <div className="lg:col-span-1">
         <Card>
           <CardHeader>
             <CardTitle>Record Meter Usage</CardTitle>
             <CardDescription>
-              Fill the form to record a new water meter reading.
+              Fill the form to record a new water meter reading. Please enter the Resident UID.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -231,22 +219,11 @@ export default function MeterReadingsPage() {
                   control={form.control}
                   name="residentId"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Resident</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a resident" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {users?.map((u) => (
-                            <SelectItem key={u.id} value={u.id}>
-                              {u.fullName}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                     <FormItem>
+                      <FormLabel>Resident UID</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Enter user's unique ID" {...field} />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -309,12 +286,19 @@ export default function MeterReadingsPage() {
           </CardContent>
         </Card>
       </div>
+  );
 
-      <div className="lg:col-span-2">
+  const historyCardClass = userRole === 'user' ? 'lg:col-span-1' : 'lg:col-span-2';
+
+  return (
+    <div className={`grid gap-8 ${userRole === 'user' ? 'lg:grid-cols-1' : 'lg:grid-cols-3'}`}>
+      { (userRole === 'admin' || userRole === 'petugas') && renderFormForOperators() }
+
+      <div className={historyCardClass}>
         <Card>
           <CardHeader>
-            <CardTitle>Meter Reading History</CardTitle>
-            <CardDescription>A log of all recorded meter readings.</CardDescription>
+            <CardTitle>{userRole === 'user' ? 'My Meter Reading History' : 'All Meter Reading History'}</CardTitle>
+            <CardDescription>A log of {userRole === 'user' ? 'your' : 'all'} recorded meter readings.</CardDescription>
           </CardHeader>
           <CardContent>
              <div className="rounded-md border">
@@ -332,7 +316,7 @@ export default function MeterReadingsPage() {
                     {readings && readings.length > 0 ? (
                     readings.map(reading => (
                         <TableRow key={reading.id}>
-                        <TableCell className="font-medium">{userMap.get(reading.residentId) || 'Unknown'}</TableCell>
+                        <TableCell className="font-medium">{userMap.get(reading.residentId) || reading.residentId}</TableCell>
                         <TableCell>{months.find(m => m.value === reading.month)?.label} {reading.year}</TableCell>
                         <TableCell>{reading.reading}</TableCell>
                         <TableCell>
