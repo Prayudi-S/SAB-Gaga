@@ -77,17 +77,19 @@ export default function MeterReadingsPage() {
   const userRole = useMemo(() => currentUserProfile?.role, [currentUserProfile]);
 
   useEffect(() => {
-    if (userLoading || profileLoading) {
-      return; 
-    }
-
-    if (!user) {
-      router.push('/'); 
-      return;
+    if (userLoading || !user) return;
+    if (profileLoading) return;
+    if (!currentUserProfile) {
+        // If profile isn't loaded and not loading, maybe they need to be redirected.
+        if(!profileLoading){
+            router.push('/');
+        }
+        return;
     }
     
     async function fetchData() {
         if (!firestore || !userRole) return;
+        
         setPageLoading(true);
         try {
             let readingsData: MeterReading[] = [];
@@ -109,7 +111,6 @@ export default function MeterReadingsPage() {
                 );
                 const readingsSnapshot = await getDocs(readingsQuery);
                 readingsData = readingsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MeterReading));
-                // For a regular user, the 'users' map only needs their own profile
                 if(currentUserProfile) {
                     setUsers([currentUserProfile]);
                 }
@@ -119,7 +120,7 @@ export default function MeterReadingsPage() {
         } catch (error: any) {
             console.error("Error fetching data:", error);
             const permissionError = new FirestorePermissionError({
-                path: error.customData?.path || 'users or meterReadings',
+                path: 'users or meterReadings',
                 operation: 'list',
             });
             errorEmitter.emit('permission-error', permissionError);
@@ -130,10 +131,12 @@ export default function MeterReadingsPage() {
 
     fetchData();
     
-  }, [user, userLoading, currentUserProfile, profileLoading, userRole, firestore, router, toast]);
+  }, [user, userLoading, currentUserProfile, profileLoading, userRole, firestore, router]);
 
   const userMap = useMemo(() => {
-    return new Map(users.map(u => [u.id, u.fullName]));
+    const map = new Map<string, string>();
+    users.forEach(u => map.set(u.id, u.fullName));
+    return map;
   }, [users]);
 
   const form = useForm<ReadingFormValues>({
@@ -322,7 +325,7 @@ export default function MeterReadingsPage() {
                         <TableCell>
                             {reading.recordedAt && (reading.recordedAt as any).seconds ? 
                                 format(new Date((reading.recordedAt as any).seconds * 1000), 'dd MMMM yyyy, HH:mm', { locale: id }) 
-                                : 'Just now'}
+                                : (reading.recordedAt instanceof Date ? format(reading.recordedAt, 'dd MMMM yyyy, HH:mm', { locale: id }) : 'Just now')}
                         </TableCell>
                         <TableCell>{userMap.get(reading.recordedBy) || 'Unknown'}</TableCell>
                         </TableRow>
