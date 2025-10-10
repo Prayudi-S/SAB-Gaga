@@ -1,22 +1,24 @@
 /**
- * @fileoverview Firestore Security Rules for the application.
+ * @fileoverview Firestore Security Rules for Prototyping.
  *
  * Core Philosophy:
- * This ruleset enforces role-based access control, with distinct permissions for admins, petugas (staff), and regular users.
- * Admins have full access, petugas can manage meter readings and payments, and users can only view their own data.
+ * This ruleset prioritizes secure authorization by enforcing ownership and role-based access control.
+ * It assumes a flexible data structure to allow for rapid prototyping and iteration.
+ * Schema validation is minimized to focus on critical authorization fields.
  *
  * Data Structure:
- * User profiles are stored under `/users/{userId}`.
+ * - /users/{userId}: Stores user profile information, accessible only to the user and admins.
+ * - /payments/{paymentId}: Stores payment records, writable only by admins. Read is public.
+ * - /meterReadings/{readingId}: Stores meter readings, writable only by petugas (meter readers). Read is public.
  *
  * Key Security Decisions:
- * - Admins are determined by a custom claim on their authentication token, which must be set server-side.
- * - Petugas are also determined by a custom claim on their authentication token.
- * - Regular users can only access their own profile data.
- * - The rules explicitly deny operations that are not permitted based on the user's role.
- * - User listing is generally disallowed for security reasons.
+ * - User listing is disabled for security reasons.
+ * - Public read access is granted to /payments and /meterReadings, but writes are strictly controlled via admin/petugas roles.
+ * - The `role` field in the /users/{userId} document is the central piece for role-based access control.
  *
  * Denormalization for Authorization:
- * - The roles (admin, petugas) are denormalized onto the user's auth token as custom claims. This avoids having to read a separate document to determine the user's role.
+ * The `role` field is denormalized directly onto the user profile document, allowing for simple role checks without extra reads.
+ * The residentId field is present on both Payment and MeterReading entities to filter data by user.
  */
 rules_version = '2';
 service cloud.firestore {
@@ -24,62 +26,92 @@ service cloud.firestore {
 
     /**
      * @description Checks if the user is signed in.
-     * @return {bool} True if the user is signed in, false otherwise.
+     * @return {boolean} True if the user is signed in, false otherwise.
      */
     function isSignedIn() {
       return request.auth != null;
     }
 
     /**
-     * @description Checks if the user is the owner of the document.
-     * @param {string} userId - The user ID to check against.
-     * @return {bool} True if the user is the owner, false otherwise.
+     * @description Checks if the authenticated user's UID matches the provided userId.
+     * @param {string} userId The user ID to compare against.
+     * @return {boolean} True if the user is the owner, false otherwise.
      */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
     /**
-     * @description Checks if the user is an admin.
-     * @return {bool} True if the user is an admin, false otherwise.
-     */
-    function isAdmin() {
-      return isSignedIn() && request.auth.token.admin == true;
-    }
-
-    /**
-     * @description Checks if the user is a petugas (staff).
-     * @return {bool} True if the user is a petugas, false otherwise.
-     */
-    function isPetugas() {
-      return isSignedIn() && request.auth.token.petugas == true;
-    }
-
-    /**
-     * @description Checks if the user is the existing owner of the document.
-     * @param {string} userId - The user ID to check against.
-     * @return {bool} True if the user is the existing owner, false otherwise.
+     * @description Checks if the user exists and is the owner.
+     * @param {string} userId The user ID to compare against.
+     * @return {boolean} True if the user exists and is the owner, false otherwise.
      */
     function isExistingOwner(userId) {
-        return isSignedIn() && isOwner(userId) && exists(/databases/$(database)/documents/users/$(userId));
+      return isOwner(userId) && resource != null;
+    }
+
+    /**
+     * @description Checks if the authenticated user has the 'admin' role.
+     * @return {boolean} True if the user is an admin, false otherwise.
+     */
+    function isAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    /**
+     * @description Checks if the authenticated user has the 'petugas' role.
+     * @return {boolean} True if the user is a petugas, false otherwise.
+     */
+    function isPetugas() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'petugas';
     }
 
     /**
      * @description Rules for user profiles.
      * @path /users/{userId}
-     * @allow (create) - A user can create their own profile if the userId matches their auth.uid.
-     * @allow (get, update, delete) - An admin can get, update, and delete any user profile. A user can get, update, and delete their own profile.
-     * @deny (create) - A user cannot create a profile with a userId that doesn't match their auth.uid.
-     * @deny (get, update, delete) - A user cannot get, update, or delete another user's profile.
-     * @principle Enforces user ownership and admin override.
+     * @allow (create) - User with matching UID can create their profile.
+     * @allow (get, update, delete) - User and admin can read/write their profile.
+     * @deny (create) - User tries to create a profile with mismatched UID.
+     * @deny (list) - Listing users is not allowed.
+     * @principle Enforces document ownership and admin override.
      */
     match /users/{userId} {
-      // Only the owner can read/write their own profile, and admins can do anything
       allow get: if isOwner(userId) || isAdmin();
-      allow list: if false; // User listing is disabled for security reasons.
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) && isExistingOwner(userId) || isAdmin();
-      allow delete: if isOwner(userId) && isExistingOwner(userId) || isAdmin();
+      allow list: if false;
+      allow create: if isOwner(userId) && request.resource.data.uid == userId;
+      allow update: if isExistingOwner(userId) || isAdmin();
+      allow delete: if isExistingOwner(userId) || isAdmin();
+    }
+
+    /**
+     * @description Rules for payments.
+     * @path /payments/{paymentId}
+     * @allow (get, list) - Anyone can read payment information.
+     * @allow (create, update, delete) - Only admins can create, update, and delete payments.
+     * @deny (create, update, delete) - Non-admins cannot create, update, or delete payments.
+     * @principle Allows public read access with restricted writes.
+     */
+    match /payments/{paymentId} {
+      allow get, list: if true;
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    /**
+     * @description Rules for meter readings.
+     * @path /meterReadings/{readingId}
+     * @allow (get, list) - Anyone can read meter readings.
+     * @allow (create) - Only petugas (meter readers) can create meter readings.
+     * @allow (update, delete) - Only petugas (meter readers) can update and delete meter readings.
+     * @deny (create) - Non-petugas cannot create meter readings.
+     * @principle Allows public read access with restricted writes by petugas.
+     */
+    match /meterReadings/{readingId} {
+      allow get, list: if true;
+      allow create: if isPetugas();
+      allow update: if isPetugas();
+      allow delete: if isPetugas();
     }
   }
 }

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { LogOut, User, Droplets } from "lucide-react";
+import { LogOut, User, Droplets, Users } from "lucide-react";
 import { getAuth, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 
@@ -48,6 +48,14 @@ export default function Header() {
         <Droplets className="h-6 w-6" />
         <span className="font-headline text-xl">SAB Gaga</span>
       </Link>
+      <nav className="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:items-center md:gap-5 md:text-sm lg:gap-6">
+        <Link
+            href="/dashboard/users"
+            className="text-primary-foreground/70 transition-colors hover:text-primary-foreground"
+          >
+            Users
+        </Link>
+      </nav>
       <div className="flex w-full items-center gap-4 md:ml-auto md:gap-2 lg:gap-4">
         <div className="ml-auto flex-1 sm:flex-initial">
           {/* Search bar could go here */}
