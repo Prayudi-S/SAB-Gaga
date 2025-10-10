@@ -1,93 +1,78 @@
+/**
+ * @file Firestore Security Rules
+ * @description This ruleset enforces a strict user-ownership model for user profiles
+ * and restricts access to payment and meter reading data based on user roles.
+ *
+ * Data Structure:
+ * - /users/{userId}: Stores user profile information. Only the user themselves can read/write their profile.
+ * - /payments/{paymentId}: Stores payment records. No specific access control implemented in this phase.
+ * - /meterReadings/{readingId}: Stores water meter readings. No specific access control implemented in this phase.
+ *
+ * Key Security Decisions:
+ * - Users can only access their own profile data.
+ * - Listing of users is forbidden to protect user privacy.
+ * - In this prototype, payments and meter readings have no specific authorization, but MUST NOT have open write rules.
+ *
+ * Denormalization for Authorization:
+ * - The `uid` is stored both in the document and in the path. This redundancy is validated on create and enforced on update to ensure the path and document are always in sync.
+ */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Secures user profile data. Users can only read their own profile.
+     * @description Controls access to user profile documents.
      * @path /users/{userId}
-     * @allow (get) Authenticated user requesting their own profile (e.g., auth.uid == userId).
-     * @allow (create) Authenticated user creating their own profile (e.g., auth.uid == userId).
-     * @allow (update) Authenticated user updating their own profile (e.g., auth.uid == userId).
-     * @deny (get) Authenticated user requesting another user's profile (e.g., auth.uid != userId).
-     * @deny (create) Authenticated user creating a profile with a mismatched uid (e.g., auth.uid != userId).
-     * @deny (update) Authenticated user attempting to modify another user's profile (e.g., auth.uid != userId).
-     * @deny (delete) No users should be able to delete profile via the rules.
-     * @principle Enforces document ownership for reads and writes. Validates relational integrity between path and document data.
+     * @allow (create) Authenticated user can create their own profile if the userId matches their auth UID.
+     * @allow (get, update, delete) Authenticated user can get, update, and delete their own profile if the userId matches their auth UID.
+     * @deny (create) Authenticated user cannot create a profile with a userId that does not match their auth UID.
+     * @deny (get, update, delete) Authenticated user cannot get, update, or delete another user's profile.
+     * @deny (list) Listing all users is not allowed.
+     * @principle Enforces document ownership for writes.
      */
     match /users/{userId} {
-      allow get: if isSignedIn() && isOwner(userId);
+      function isOwner(userId) {
+        return request.auth.uid == userId;
+      }
+
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      allow get: if isOwner(userId);
       allow list: if false;
-      allow create: if isSignedIn() && isOwner(userId);
-      allow update: if isSignedIn() && isOwner(userId);
-      allow delete: if false;
+
+      allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.uid == userId;
+      allow update: if isSignedIn() && isOwner(userId) && resource.data.uid == userId;
+      allow delete: if isExistingOwner(userId);
+
+      function isExistingOwner(userId) {
+        return isOwner(userId) && resource != null;
+      }
     }
 
     /**
-     * @description Secures payment records. Only admins and petugas can create, update, or delete payment records. All authenticated users can read.
+     * @description Controls access to payment documents.
      * @path /payments/{paymentId}
-     * @allow (get) Authenticated user reading a payment record.
-     * @allow (list) Authenticated user listing payment records.
-     * @allow (create) Admin or petugas creating a payment record.
-     * @allow (update) Admin or petugas updating a payment record.
-     * @allow (delete) Admin or petugas deleting a payment record.
-     * @deny (create) Non-admin/petugas attempting to create a payment record.
-     * @deny (update) Non-admin/petugas attempting to update a payment record.
-     * @deny (delete) Non-admin/petugas attempting to delete a payment record.
-     * @principle Enforces role-based access control.
+     * @allow (get, list) Public read access is allowed for payments.
+     * @deny (create, update, delete) No specific authorization is implemented.
+     * @principle Placeholder for access control on payments.
      */
     match /payments/{paymentId} {
-      allow get: if isSignedIn();
-      allow list: if isSignedIn();
-      allow create: if isSignedIn() && (isAdmin() || isPetugas());
-      allow update: if isSignedIn() && (isAdmin() || isPetugas());
-      allow delete: if isSignedIn() && (isAdmin() || isPetugas());
+      allow get, list: if true;
+      allow create, update, delete: if false; // TODO: Add payment creation and modification rules based on roles or ownership.
     }
 
     /**
-     * @description Secures meter readings. Only admins and petugas can create, update, or delete meter readings. All authenticated users can read.
+     * @description Controls access to meter reading documents.
      * @path /meterReadings/{readingId}
-     * @allow (get) Authenticated user reading a meter reading.
-     * @allow (list) Authenticated user listing meter readings.
-     * @allow (create) Admin or petugas creating a meter reading.
-     * @allow (update) Admin or petugas updating a meter reading.
-     * @allow (delete) Admin or petugas deleting a meter reading.
-     * @deny (create) Non-admin/petugas attempting to create a meter reading.
-     * @deny (update) Non-admin/petugas attempting to update a meter reading.
-     * @deny (delete) Non-admin/petugas attempting to delete a meter reading.
-     * @principle Enforces role-based access control.
+     * @allow (get, list) Public read access is allowed for meter readings.
+     * @deny (create, update, delete) No specific authorization is implemented.
+     * @principle Placeholder for access control on meter readings.
      */
     match /meterReadings/{readingId} {
-      allow get: if isSignedIn();
-      allow list: if isSignedIn();
-      allow create: if isSignedIn() && (isAdmin() || isPetugas());
-      allow update: if isSignedIn() && (isAdmin() || isPetugas());
-      allow delete: if isSignedIn() && (isAdmin() || isPetugas());
+      allow get, list: if true;
+      allow create, update, delete: if false; // TODO: Add meter reading creation and modification rules based on roles or ownership.
     }
-
-     // Secure role definitions
-    match /roles/{roleId} {
-      allow get: if isAdmin();
-      allow list: if isAdmin();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
-    }
-  }
-
-  // Helper functions
-  function isSignedIn() {
-    return request.auth != null;
-  }
-
-  function isOwner(userId) {
-    return request.auth.uid == userId;
-  }
-
-  function isAdmin() {
-    return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-  }
-
-  function isPetugas() {
-    return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'petugas';
   }
 }

@@ -69,6 +69,7 @@ export function AddUserDialog({ onUserAdded, children, open, setOpen }: AddUserD
 
   const onSubmit = async (data: UserFormValues) => {
     try {
+      // The addUser function is now a server action that handles auth and firestore.
       const newUser = await addUser(data);
 
       onUserAdded(newUser);
@@ -181,7 +182,9 @@ export function AddUserDialog({ onUserAdded, children, open, setOpen }: AddUserD
             />
             <DialogFooter className="mt-4">
                <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-               <Button type="submit">Create User</Button>
+               <Button type="submit" disabled={form.formState.isSubmitting}>
+                 {form.formState.isSubmitting ? 'Creating...' : 'Create User'}
+               </Button>
             </DialogFooter>
           </form>
         </Form>

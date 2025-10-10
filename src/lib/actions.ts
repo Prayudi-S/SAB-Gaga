@@ -18,12 +18,11 @@ import { FirestorePermissionError } from '@/firebase/errors';
  * In a production environment, this entire logic should be handled by a secure backend
  * (e.g., a Cloud Function) using the Firebase Admin SDK.
  *
- * @param adminAuth - The current admin's Auth instance.
  * @param userData - The user data for the new user.
  * @returns The newly created user profile.
  */
 export async function addUser(
-  userData: Omit<UserProfile, 'uid'>
+  userData: Omit<UserProfile, 'uid' | 'password'> & { password?: string }
 ): Promise<UserProfile> {
   const { firestore } = initializeFirebase(); // Get main app's firestore instance
 
@@ -33,11 +32,14 @@ export async function addUser(
   const tempAuth = getAuth(tempApp);
 
   try {
+    if (!userData.password) {
+        throw new Error("Password is required to create a new user.");
+    }
     // 1. Create the user in Firebase Authentication
     const userCredential = await createUserWithEmailAndPassword(
       tempAuth,
       userData.email,
-      userData.password as string // Assuming password is provided in this object
+      userData.password
     );
     const user = userCredential.user;
 
@@ -54,18 +56,9 @@ export async function addUser(
     // 3. Save the user profile to Firestore
     const userDocRef = doc(firestore, 'users', newUserProfile.uid);
     
-    // Using a non-blocking call for optimistic UI updates
-    setDoc(userDocRef, newUserProfile)
-      .catch((serverError) => {
-        const permissionError = new FirestorePermissionError({
-          path: userDocRef.path,
-          operation: 'create',
-          requestResourceData: newUserProfile,
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        // We still throw to let the client know something went wrong with the DB write
-        throw new Error(`Failed to create user document in Firestore: ${serverError.message}`);
-      });
+    // Use `await` here to ensure the database operation completes before returning.
+    // This makes error handling more predictable.
+    await setDoc(userDocRef, newUserProfile);
       
     // The user profile returned to the client-side
     return newUserProfile;
@@ -73,7 +66,10 @@ export async function addUser(
   } catch (error: any) {
     console.error("Error creating user:", error);
     // Re-throw the error to be caught by the calling form
-    throw new Error(error.message || 'Failed to create user in authentication.');
+    if (error.code === 'auth/email-already-in-use') {
+        throw new Error('This email address is already in use by another account.');
+    }
+    throw new Error(error.message || 'Failed to create user.');
   } finally {
     // 4. Clean up the temporary app instance
     if (tempAuth.currentUser) {
