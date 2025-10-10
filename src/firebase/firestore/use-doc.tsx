@@ -24,7 +24,7 @@ export function useDoc<T>(path: string | null) {
       docRef,
       (snapshot: DocumentSnapshot<DocumentData>) => {
         if (snapshot.exists()) {
-          setData({ id: snapshot.id, ...snapshot.data() } as unknown as T);
+          setData({ uid: snapshot.id, ...snapshot.data() } as unknown as T);
         } else {
           setData(null);
         }

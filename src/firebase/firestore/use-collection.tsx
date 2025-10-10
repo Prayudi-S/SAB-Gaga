@@ -23,7 +23,7 @@ export function useCollection<T>(path: string | null) {
     const unsubscribe = onSnapshot(
       collectionRef,
       (snapshot: QuerySnapshot<DocumentData>) => {
-        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as T));
+        const items = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as unknown as T));
         setData(items);
         setLoading(false);
       },
