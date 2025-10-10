@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
-export default function UsersPage() {
+function UsersPageContent() {
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
 
@@ -16,8 +16,8 @@ export default function UsersPage() {
 
   const isAdmin = useMemo(() => currentUserProfile?.role === 'admin', [currentUserProfile]);
 
-  const usersCollectionPath = useMemo(() => (isAdmin ? 'users' : null), [isAdmin]);
-  const { data: users, loading: usersLoading } = useCollection<UserProfile>(usersCollectionPath);
+  // Only attempt to fetch all users if the current user is confirmed to be an admin.
+  const { data: users, loading: usersLoading } = useCollection<UserProfile>(isAdmin ? 'users' : null);
 
   const isLoading = userLoading || profileLoading || (isAdmin && usersLoading);
 
@@ -33,6 +33,7 @@ export default function UsersPage() {
     }
   }, [user, userLoading, currentUserProfile, profileLoading, router]);
 
+  // Show skeleton loader while verifying auth/role or loading users.
   if (isLoading || !isAdmin) {
     return (
       <div className="flex flex-col gap-8">
@@ -52,7 +53,7 @@ export default function UsersPage() {
     );
   }
 
-  // At this point, we are sure the user is an admin and the `users` data is either loaded or null (if collection is empty).
+  // At this point, we are sure the user is an admin and `users` data is available.
   return (
     <div className="flex flex-col gap-8">
       <div>
@@ -61,8 +62,13 @@ export default function UsersPage() {
           Add, edit, and manage users and their roles.
         </p>
       </div>
-      {/* Pass the fetched users to the table. `users` will have data because the isAdmin check passed. */}
-      {users && <UsersTable initialUsers={users} />}
+      {/* `users` will be an array here (it could be empty) because the query only runs for admins. */}
+      <UsersTable initialUsers={users || []} />
     </div>
   );
+}
+
+
+export default function UsersPage() {
+    return <UsersPageContent />;
 }
