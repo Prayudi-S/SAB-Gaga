@@ -78,67 +78,74 @@ export default function MeterReadingsPage() {
   const canRecord = useMemo(() => currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'petugas', [currentUserProfile]);
 
   useEffect(() => {
-    // Wait until we have user and profile info
-    if (userLoading || profileLoading) return;
-    
-    // If not logged in, redirect
+    // Phase 1: Wait for auth and profile to finish loading.
+    if (userLoading || profileLoading) {
+      return; // Wait until we know who the user is and what their role is.
+    }
+
+    // Phase 2: Handle redirection or authorization.
     if (!user) {
-      router.push('/');
+      router.push('/'); // Not logged in, redirect.
+      return;
+    }
+
+    if (!currentUserProfile) {
+      // Logged in but profile doesn't exist.
+      toast({
+          variant: 'destructive',
+          title: 'Profile Not Found',
+          description: 'Could not load your user profile. Redirecting...',
+      });
+      router.push('/dashboard');
       return;
     }
     
-    // If we have profile info, check role
-    if (currentUserProfile) {
-        if (!canRecord) {
-            toast({
-                variant: 'destructive',
-                title: 'Access Denied',
-                description: 'You do not have permission to view this page.',
-            });
-            router.push('/dashboard');
-            return;
-        }
-    
-        // Only fetch data if user is authorized
-        async function fetchData() {
-            if (!firestore) return;
-            setPageLoading(true);
-            try {
-                // Fetch all users for the dropdown
-                const usersQuery = query(collection(firestore, 'users'));
-                const usersSnapshot = await getDocs(usersQuery);
-                const usersData = usersSnapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile));
-                setUsers(usersData);
-
-                // Fetch all meter readings
-                const readingsQuery = query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc'));
-                const readingsSnapshot = await getDocs(readingsQuery);
-                const readingsData = readingsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MeterReading));
-                setReadings(readingsData);
-
-            } catch (error: any) {
-                console.error("Failed to fetch data:", error);
-                toast({
-                    variant: 'destructive',
-                    title: 'Failed to load data',
-                    description: error.message || 'Could not fetch necessary data. Check permissions.',
-                });
-            } finally {
-                setPageLoading(false);
-            }
-        }
-
-        fetchData();
-    } else if (!userLoading && !profileLoading && !currentUserProfile) {
-        // Handle case where user is logged in but profile doesn't exist or is not loaded
-        toast({
-            variant: 'destructive',
-            title: 'Profile Not Found',
-            description: 'Could not load your user profile. Redirecting...',
-        });
-        router.push('/dashboard');
+    // User is logged in and has a profile. Now check role.
+    if (!canRecord) {
+      toast({
+          variant: 'destructive',
+          title: 'Access Denied',
+          description: 'You do not have permission to view this page.',
+      });
+      router.push('/dashboard');
+      return;
     }
 
+    // Phase 3: User is authorized (admin/petugas). Fetch all necessary data.
+    async function fetchData() {
+        if (!firestore) return;
+        setPageLoading(true); // Start loading page data.
+        try {
+            // Fetch all users for the dropdown
+            const usersQuery = query(collection(firestore, 'users'));
+            const usersSnapshot = await getDocs(usersQuery);
+            const usersData = usersSnapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile));
+            setUsers(usersData);
+
+            // Fetch all meter readings for the history table
+            const readingsQuery = query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc'));
+            const readingsSnapshot = await getDocs(readingsQuery);
+            const readingsData = readingsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MeterReading));
+            setReadings(readingsData);
+
+        } catch (error: any) {
+            console.error("Failed to fetch data:", error);
+            // Let the error emitter handle permission errors, but show a toast for other errors.
+            if (!(error instanceof FirestorePermissionError)) {
+               toast({
+                    variant: 'destructive',
+                    title: 'Failed to load data',
+                    description: error.message || 'Could not fetch necessary data from Firestore.',
+                });
+            }
+        } finally {
+            setPageLoading(false); // Finish loading page data.
+        }
+    }
+
+    fetchData();
+    
+  // The dependency array ensures this effect runs only when the user/profile/auth state changes.
   }, [user, userLoading, currentUserProfile, profileLoading, canRecord, firestore, router, toast]);
 
   const userMap = useMemo(() => {
@@ -197,7 +204,8 @@ export default function MeterReadingsPage() {
     });
   };
 
-  // Show skeleton loader while checking auth, profile and fetching initial data
+  // Show a full page skeleton while we verify authentication and authorization.
+  // This state persists until we know if the user is an admin/petugas and have fetched data.
   if (userLoading || profileLoading || pageLoading) {
     return (
        <div className="grid gap-8 lg:grid-cols-3">
@@ -211,7 +219,8 @@ export default function MeterReadingsPage() {
     );
   }
   
-  // Don't render content if user is not authorized
+  // This check is a safeguard. If the user isn't authorized, the effect above should have already redirected them.
+  // Returning null prevents any rendering attempt if the redirection is pending.
   if (!canRecord) {
       return null;
   }
@@ -317,7 +326,7 @@ export default function MeterReadingsPage() {
           <CardHeader>
             <CardTitle>Meter Reading History</CardTitle>
             <CardDescription>A log of all recorded meter readings.</CardDescription>
-          </CardHeader>
+          </Header>
           <CardContent>
              <div className="rounded-md border">
                 <Table>
