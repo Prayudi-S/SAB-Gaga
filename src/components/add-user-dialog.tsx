@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useToast } from '@/hooks/use-toast';
-import { addUser } from '@/lib/actions'; // We will create this action
+import { addUser } from '@/lib/actions';
 import type { UserProfile } from '@/lib/types';
 import {
   Select,
@@ -69,8 +69,6 @@ export function AddUserDialog({ onUserAdded, children, open, setOpen }: AddUserD
 
   const onSubmit = async (data: UserFormValues) => {
     try {
-      // In a real app, this would be a server action calling Firebase Admin SDK
-      // For now, we simulate this and directly add to Firestore collection
       const newUser = await addUser(data);
 
       onUserAdded(newUser);
