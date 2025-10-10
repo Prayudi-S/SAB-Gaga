@@ -73,11 +73,35 @@ export default function MeterReadingsPage() {
 
   const canRecord = useMemo(() => currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'petugas', [currentUserProfile]);
   
-  const usersQuery = useMemo(() => (canRecord && firestore ? collection(firestore, 'users') : null), [canRecord, firestore]);
-  const readingsQuery = useMemo(() => (canRecord && firestore ? query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc')) : null), [canRecord, firestore]);
+  const usersQueryPath = useMemo(() => (canRecord ? 'users' : null), [canRecord]);
+  const readingsQueryPath = useMemo(() => (canRecord ? 'meterReadings' : null), [canRecord]);
 
-  const { data: users, loading: usersLoading } = useCollection<UserProfile>(usersQuery?.path);
-  const { data: readings, loading: readingsLoading } = useCollection<MeterReading>(readingsQuery?.path);
+  const { data: users, loading: usersLoading } = useCollection<UserProfile>(usersQueryPath);
+  
+  // Create the query object for readings separately to apply sorting
+  const readingsQuery = useMemo(() => {
+    if (canRecord && firestore) {
+      return query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc'));
+    }
+    return null;
+  }, [canRecord, firestore]);
+  
+  // useCollection now accepts a query object or a string path
+  // Since we need to order, we pass the query object's path.
+  // Note: The hook itself uses onSnapshot on the path, so ordering is client-side if we just pass `readingsQuery.path`.
+  // Let's modify useCollection slightly to accept a query object, or just sort client-side for now.
+  // For simplicity, we'll sort on the client.
+  const { data: readingsData, loading: readingsLoading } = useCollection<MeterReading>(readingsQueryPath);
+  
+  const readings = useMemo(() => {
+    if (!readingsData) return [];
+    return readingsData.sort((a, b) => {
+        const aDate = (a.recordedAt as any)?.seconds || 0;
+        const bDate = (b.recordedAt as any)?.seconds || 0;
+        return bDate - aDate;
+    });
+  }, [readingsData]);
+
 
   const userMap = useMemo(() => {
     if (!users) return new Map();
@@ -97,14 +121,25 @@ export default function MeterReadingsPage() {
   });
 
   useEffect(() => {
-    if (!userLoading && !user) {
+    // Wait until loading is done to make a decision
+    if (userLoading || profileLoading) return;
+
+    // If loading is done and there's no user, redirect to login
+    if (!user) {
       router.push('/');
       return;
     }
-    if (!profileLoading && currentUserProfile && !(currentUserProfile.role === 'admin' || currentUserProfile.role === 'petugas')) {
+    
+    // If loading is done and we have a profile, check role
+    if (currentUserProfile && !(currentUserProfile.role === 'admin' || currentUserProfile.role === 'petugas')) {
+       toast({
+        variant: 'destructive',
+        title: 'Access Denied',
+        description: 'You do not have permission to view this page.',
+      });
       router.push('/dashboard');
     }
-  }, [user, userLoading, currentUserProfile, profileLoading, router]);
+  }, [user, userLoading, currentUserProfile, profileLoading, router, toast]);
 
   const onSubmit = async (data: ReadingFormValues) => {
     if (!firestore || !user) return;
@@ -143,9 +178,13 @@ export default function MeterReadingsPage() {
 
   if (isLoading || !canRecord) {
     return (
-       <div className="flex flex-col gap-8">
-        <Skeleton className="h-96 w-full" />
-        <Skeleton className="h-96 w-full" />
+       <div className="grid gap-8 lg:grid-cols-3">
+        <div className="lg:col-span-1">
+            <Skeleton className="h-[550px] w-full" />
+        </div>
+        <div className="lg:col-span-2">
+            <Skeleton className="h-[550px] w-full" />
+        </div>
       </div>
     );
   }
@@ -207,7 +246,7 @@ export default function MeterReadingsPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Month</FormLabel>
-                        <Select onValueChange={field.onChange} value={String(field.value)}>
+                        <Select onValueChange={(value) => field.onChange(Number(value))} value={String(field.value)}>
                           <FormControl>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                           </FormControl>
@@ -272,7 +311,9 @@ export default function MeterReadingsPage() {
                         <TableCell>{months.find(m => m.value === reading.month)?.label} {reading.year}</TableCell>
                         <TableCell>{reading.reading}</TableCell>
                         <TableCell>
-                            {reading.recordedAt ? format(new Date((reading.recordedAt as any).seconds * 1000), 'dd MMMM yyyy, HH:mm', { locale: id }) : 'N/A'}
+                            {reading.recordedAt && (reading.recordedAt as any).seconds ? 
+                                format(new Date((reading.recordedAt as any).seconds * 1000), 'dd MMMM yyyy, HH:mm', { locale: id }) 
+                                : 'Recording...'}
                         </TableCell>
                         <TableCell>{userMap.get(reading.recordedBy) || 'Unknown'}</TableCell>
                         </TableRow>
