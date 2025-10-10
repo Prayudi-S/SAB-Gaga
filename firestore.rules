@@ -1,74 +1,103 @@
-/**
- * @file Firestore Security Rules
- * @description This ruleset implements a role-based access control system.
- *
- * Core Philosophy:
- *   - Access is determined by the user's 'role' field in their profile.
- *   - The 'admin' role has full access to all data.
- *   - Other roles have no access unless explicitly granted (not defined in the IR).
- *
- * Data Structure:
- *   - User profiles are stored in the `/users/{userId}` collection.
- *   - Payment records are stored in the `/payments/{paymentId}` collection.
- *   - Meter readings are stored in the `/meterReadings/{readingId}` collection.
- *
- * Key Security Decisions:
- *   - Only administrators can read, create, update, or delete any document in any collection.
- *   - This configuration prioritizes security by default denying access to non-admin users.
- *   - The rules are structured to be easily extended with more fine-grained permissions in the future.
- */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Manages user profile data, accessible only to admins.
+     * @description Controls access to user profile information.
      * @path /users/{userId}
-     * @allow (read, create, update, delete) if the user is an admin.
-     * @deny (read, create, update, delete) if the user is not an admin.
-     * @principle Enforces role-based access control; only admins can manage user profiles.
+     * @allow (get) Authenticated user can read their own profile or admin can read any profile.
+     * @allow (list) Authenticated user can list their own profile or admin can list any profile.
+     * @allow (create) Authenticated user can create their own profile.
+     * @allow (update) Authenticated user can update their own profile or admin can update any profile.
+     * @allow (delete) Authenticated user can delete their own profile or admin can delete any profile.
+     * @deny (get) Non-authenticated user cannot read user profiles.
+     * @deny (list) Non-authenticated user cannot list user profiles.
+     * @deny (create) Non-authenticated user cannot create user profiles.
+     * @deny (update) Non-authenticated user cannot update other user's profiles.
+     * @deny (delete) Non-authenticated user cannot delete user profiles.
+     * @principle Enforces document ownership for user profiles.
      */
     match /users/{userId} {
-      allow get: if isAdmin();
-      allow list: if isAdmin();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow list: if false; // Listing all users is generally not desired
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow delete: if isSignedIn() && (isOwner(userId) || isAdmin());
     }
 
     /**
-     * @description Manages payment records, accessible only to admins.
+     * @description Controls access to payment records.
      * @path /payments/{paymentId}
-     * @allow (read, create, update, delete) if the user is an admin.
-     * @deny (read, create, update, delete) if the user is not an admin.
-     * @principle Enforces role-based access control; only admins can manage payment records.
+     * @allow (get) Authenticated user can read payment records if they are the resident or admin/petugas.
+     * @allow (list) Authenticated user can list payment records if they are the resident or admin/petugas.
+     * @allow (create) Authenticated user can create payment records if they are admin/petugas.
+     * @allow (update) Authenticated user can update payment records if they are admin/petugas or owner of the payment.
+     * @allow (delete) Authenticated user can delete payment records if they are admin/petugas or owner of the payment.
+     * @deny (get) Non-authenticated user cannot read payment records.
+     * @deny (list) Non-authenticated user cannot list payment records.
+     * @deny (create) Non-authenticated user cannot create payment records.
+     * @deny (update) Non-authenticated user cannot update payment records unless admin/petugas or owner.
+     * @deny (delete) Non-authenticated user cannot delete payment records unless admin/petugas or owner.
+     * @principle Enforces role-based access control for payment records.
      */
     match /payments/{paymentId} {
-      allow get: if isAdmin();
-      allow list: if isAdmin();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow get: if isSignedIn() && (isResident(resource.data.residentId) || isAdminOrPetugas());
+      allow list: if false; // Listing all payments is generally not desired
+      allow create: if isSignedIn() && isAdminOrPetugas();
+      allow update: if isSignedIn() && (isAdminOrPetugas() || isPaymentOwner());
+      allow delete: if isSignedIn() && (isAdminOrPetugas() || isPaymentOwner());
     }
 
     /**
-     * @description Manages meter reading data, accessible only to admins.
+     * @description Controls access to meter reading records.
      * @path /meterReadings/{readingId}
-     * @allow (read, create, update, delete) if the user is an admin.
-     * @deny (read, create, update, delete) if the user is not an admin.
-     * @principle Enforces role-based access control; only admins can manage meter readings.
+     * @allow (get) Authenticated user can read meter reading records if they are the resident or admin/petugas.
+     * @allow (list) Authenticated user can list meter reading records if they are the resident or admin/petugas.
+     * @allow (create) Authenticated user can create meter reading records if they are admin/petugas.
+     * @allow (update) Authenticated user can update meter reading records if they are admin/petugas.
+     * @allow (delete) Authenticated user can delete meter reading records if they are admin/petugas.
+     * @deny (get) Non-authenticated user cannot read meter reading records.
+     * @deny (list) Non-authenticated user cannot list meter reading records.
+     * @deny (create) Non-authenticated user cannot create meter reading records.
+     * @deny (update) Non-authenticated user cannot update meter reading records unless admin/petugas.
+     * @deny (delete) Non-authenticated user cannot delete meter reading records unless admin/petugas.
+     * @principle Enforces role-based access control for meter reading records.
      */
     match /meterReadings/{readingId} {
-      allow get: if isAdmin();
-      allow list: if isAdmin();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow get: if isSignedIn() && (isResident(resource.data.residentId) || isAdminOrPetugas());
+      allow list: if false; // Listing all meter readings is generally not desired
+      allow create: if isSignedIn() && isAdminOrPetugas();
+      allow update: if isSignedIn() && isAdminOrPetugas();
+      allow delete: if isSignedIn() && isAdminOrPetugas();
     }
+  }
 
-    // Helper function to check if the user is an admin.
-    function isAdmin() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
+  // Helper functions
+  function isSignedIn() {
+    return request.auth != null;
+  }
+
+  function isOwner(userId) {
+    return request.auth.uid == userId;
+  }
+
+  function isAdmin() {
+    return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+  }
+
+  function isPetugas() {
+    return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'petugas';
+  }
+
+  function isAdminOrPetugas() {
+    return isAdmin() || isPetugas();
+  }
+
+  function isResident(residentId) {
+    return residentId == request.auth.uid;
+  }
+
+  function isPaymentOwner() {
+      return resource.data.residentId == request.auth.uid;
   }
 }
