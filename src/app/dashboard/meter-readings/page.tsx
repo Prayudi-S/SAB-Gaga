@@ -78,53 +78,65 @@ export default function MeterReadingsPage() {
   const canRecord = useMemo(() => currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'petugas', [currentUserProfile]);
 
   useEffect(() => {
+    // Wait until we have user and profile info
     if (userLoading || profileLoading) return;
     
+    // If not logged in, redirect
     if (!user) {
       router.push('/');
       return;
     }
-
-    if (!canRecord) {
-      toast({
-        variant: 'destructive',
-        title: 'Access Denied',
-        description: 'You do not have permission to view this page.',
-      });
-      router.push('/dashboard');
-      return;
-    }
-
-    async function fetchData() {
-        if (!firestore) return;
-        setPageLoading(true);
-        try {
-            // Fetch all users for the dropdown
-            const usersQuery = query(collection(firestore, 'users'));
-            const usersSnapshot = await getDocs(usersQuery);
-            const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserProfile));
-            setUsers(usersData);
-
-            // Fetch all meter readings
-            const readingsQuery = query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc'));
-            const readingsSnapshot = await getDocs(readingsQuery);
-            const readingsData = readingsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MeterReading));
-            setReadings(readingsData);
-
-        } catch (error: any) {
-            console.error("Failed to fetch data:", error);
+    
+    // If we have profile info, check role
+    if (currentUserProfile) {
+        if (!canRecord) {
             toast({
                 variant: 'destructive',
-                title: 'Failed to load data',
-                description: error.message || 'Could not fetch necessary data. Check permissions.',
+                title: 'Access Denied',
+                description: 'You do not have permission to view this page.',
             });
-        } finally {
-            setPageLoading(false);
+            router.push('/dashboard');
+            return;
         }
-    }
+    
+        // Only fetch data if user is authorized
+        async function fetchData() {
+            if (!firestore) return;
+            setPageLoading(true);
+            try {
+                // Fetch all users for the dropdown
+                const usersQuery = query(collection(firestore, 'users'));
+                const usersSnapshot = await getDocs(usersQuery);
+                const usersData = usersSnapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile));
+                setUsers(usersData);
 
-    if (canRecord) {
+                // Fetch all meter readings
+                const readingsQuery = query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc'));
+                const readingsSnapshot = await getDocs(readingsQuery);
+                const readingsData = readingsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MeterReading));
+                setReadings(readingsData);
+
+            } catch (error: any) {
+                console.error("Failed to fetch data:", error);
+                toast({
+                    variant: 'destructive',
+                    title: 'Failed to load data',
+                    description: error.message || 'Could not fetch necessary data. Check permissions.',
+                });
+            } finally {
+                setPageLoading(false);
+            }
+        }
+
         fetchData();
+    } else if (!userLoading && !profileLoading && !currentUserProfile) {
+        // Handle case where user is logged in but profile doesn't exist or is not loaded
+        toast({
+            variant: 'destructive',
+            title: 'Profile Not Found',
+            description: 'Could not load your user profile. Redirecting...',
+        });
+        router.push('/dashboard');
     }
 
   }, [user, userLoading, currentUserProfile, profileLoading, canRecord, firestore, router, toast]);
@@ -146,7 +158,7 @@ export default function MeterReadingsPage() {
   const onSubmit = async (data: ReadingFormValues) => {
     if (!firestore || !user) return;
 
-    const newReading: Omit<MeterReading, 'id'> = {
+    const newReadingData = {
       ...data,
       recordedBy: user.uid,
       recordedAt: serverTimestamp(),
@@ -154,8 +166,7 @@ export default function MeterReadingsPage() {
 
     const collectionRef = collection(firestore, 'meterReadings');
     
-    try {
-        const docRef = await addDoc(collectionRef, newReading);
+    addDoc(collectionRef, newReadingData).then(docRef => {
         toast({
             title: 'Reading Recorded',
             description: `Meter reading for ${userMap.get(data.residentId)} has been recorded.`,
@@ -164,7 +175,7 @@ export default function MeterReadingsPage() {
         
         // Optimistically update the UI
         const optimisticReading: MeterReading = {
-            ...newReading,
+            ...newReadingData,
             id: docRef.id,
             recordedAt: new Date(), // Use current date for immediate feedback
         };
@@ -176,17 +187,17 @@ export default function MeterReadingsPage() {
             reading: 0,
             residentId: ''
         });
-
-    } catch (serverError) {
+    }).catch(serverError => {
         const permissionError = new FirestorePermissionError({
             path: collectionRef.path,
             operation: 'create',
-            requestResourceData: newReading,
+            requestResourceData: newReadingData,
         });
         errorEmitter.emit('permission-error', permissionError);
-    }
+    });
   };
 
+  // Show skeleton loader while checking auth, profile and fetching initial data
   if (userLoading || profileLoading || pageLoading) {
     return (
        <div className="grid gap-8 lg:grid-cols-3">
@@ -198,6 +209,11 @@ export default function MeterReadingsPage() {
         </div>
       </div>
     );
+  }
+  
+  // Don't render content if user is not authorized
+  if (!canRecord) {
+      return null;
   }
 
   return (
