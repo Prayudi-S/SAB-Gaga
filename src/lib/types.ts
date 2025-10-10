@@ -22,3 +22,13 @@ export type UserProfile = {
   meterId: string;
   role: 'admin' | 'petugas' | 'user';
 };
+
+export type MeterReading = {
+  id: string;
+  residentId: string;
+  reading: number;
+  month: number;
+  year: number;
+  recordedBy: string;
+  recordedAt: unknown; // Firestore serverTimestamp
+};

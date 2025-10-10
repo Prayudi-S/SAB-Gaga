@@ -71,23 +71,29 @@
       "type": "object",
       "properties": {
         "residentId": {
-          "type": "string"
+          "type": "string",
+          "description": "The UID of the resident."
         },
         "reading": {
-          "type": "number"
+          "type": "number",
+          "description": "The meter reading in cubic meters (m³)."
         },
         "month": {
-          "type": "number"
+          "type": "number",
+          "description": "The month the reading is for."
         },
         "year": {
-          "type": "number"
+          "type": "number",
+          "description": "The year the reading is for."
         },
         "recordedBy": {
-          "type": "string"
+          "type": "string",
+          "description": "The UID of the user who recorded the reading."
         },
         "recordedAt": {
           "type": "string",
-          "format": "date-time"
+          "format": "date-time",
+          "description": "The timestamp when the reading was recorded."
         }
       },
       "required": ["residentId", "reading", "month", "year", "recordedBy", "recordedAt"]
