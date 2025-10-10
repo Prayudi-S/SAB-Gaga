@@ -312,7 +312,7 @@ export default function MeterReadingsPage() {
           <CardHeader>
             <CardTitle>Meter Reading History</CardTitle>
             <CardDescription>A log of all recorded meter readings.</CardDescription>
-          </Header>
+          </CardHeader>
           <CardContent>
              <div className="rounded-md border">
                 <Table>
