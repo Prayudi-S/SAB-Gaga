@@ -60,6 +60,15 @@ export default function RegisterPage() {
 
   const onSubmit = async (data: RegisterFormValues) => {
     try {
+      if (!auth || !firestore) {
+        toast({
+          variant: 'destructive',
+          title: 'Registration Failed',
+          description: 'Firebase not initialized. Please try again later.',
+        });
+        return;
+      }
+      
       const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
       const user = userCredential.user;
 
@@ -69,6 +78,7 @@ export default function RegisterPage() {
         fullName: data.fullName,
         houseNumber: data.houseNumber,
         meterId: data.meterId,
+        role: 'user', // Default role for new users
       };
 
       const userDocRef = doc(firestore, 'users', user.uid);

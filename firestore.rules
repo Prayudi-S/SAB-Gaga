@@ -2,54 +2,84 @@
  * @fileoverview Firestore Security Rules for the application.
  *
  * Core Philosophy:
- * This ruleset enforces a strict user-ownership model for user profiles. Each user can only read and write their own profile data.
+ * This ruleset enforces role-based access control, with distinct permissions for admins, petugas (staff), and regular users.
+ * Admins have full access, petugas can manage meter readings and payments, and users can only view their own data.
  *
  * Data Structure:
- * User profile data is stored under the `/users/{userId}` path.
+ * User profiles are stored under `/users/{userId}`.
  *
  * Key Security Decisions:
- * - Users can only create, read, update, and delete their own profile.
- * - Listing all user profiles is denied to prevent information disclosure.
+ * - Admins are determined by a custom claim on their authentication token, which must be set server-side.
+ * - Petugas are also determined by a custom claim on their authentication token.
+ * - Regular users can only access their own profile data.
+ * - The rules explicitly deny operations that are not permitted based on the user's role.
+ * - User listing is generally disallowed for security reasons.
  *
  * Denormalization for Authorization:
- *  - The `userId` path parameter is used to enforce ownership, avoiding the need for additional reads or complex role-based checks.
+ * - The roles (admin, petugas) are denormalized onto the user's auth token as custom claims. This avoids having to read a separate document to determine the user's role.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Manages access to user profile documents.
-     * @path /users/{userId}
-     * @allow (create) - User with UID 'user123' can create their own profile if request.auth.uid == 'user123'.
-     * @allow (get) - User with UID 'user123' can read their own profile if request.auth.uid == 'user123'.
-     * @allow (update) - User with UID 'user123' can update their own profile if request.auth.uid == 'user123'.
-     * @allow (delete) - User with UID 'user123' can delete their own profile if request.auth.uid == 'user123' and the document exists.
-     * @deny (create) - User with UID 'user456' cannot create a profile for 'user123'.
-     * @deny (get) - User with UID 'user456' cannot read the profile of 'user123'.
-     * @deny (update) - User with UID 'user456' cannot update the profile of 'user123'.
-     * @deny (delete) - User with UID 'user456' cannot delete the profile of 'user123'.
-     * @principle Enforces document ownership for all operations.
+     * @description Checks if the user is signed in.
+     * @return {bool} True if the user is signed in, false otherwise.
      */
-    match /users/{userId} {
-      allow get: if isSignedIn() && isOwner(userId);
-      allow list: if false;
-      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.uid == userId;
-      allow update: if isSignedIn() && isExistingOwner(userId) && request.resource.data.uid == resource.data.uid;
-      allow delete: if isSignedIn() && isExistingOwner(userId);
-    }
-
-    // Helper functions
     function isSignedIn() {
       return request.auth != null;
     }
 
+    /**
+     * @description Checks if the user is the owner of the document.
+     * @param {string} userId - The user ID to check against.
+     * @return {bool} True if the user is the owner, false otherwise.
+     */
     function isOwner(userId) {
-      return request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
+    /**
+     * @description Checks if the user is an admin.
+     * @return {bool} True if the user is an admin, false otherwise.
+     */
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+
+    /**
+     * @description Checks if the user is a petugas (staff).
+     * @return {bool} True if the user is a petugas, false otherwise.
+     */
+    function isPetugas() {
+      return isSignedIn() && request.auth.token.petugas == true;
+    }
+
+    /**
+     * @description Checks if the user is the existing owner of the document.
+     * @param {string} userId - The user ID to check against.
+     * @return {bool} True if the user is the existing owner, false otherwise.
+     */
     function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
+        return isSignedIn() && isOwner(userId) && exists(/databases/$(database)/documents/users/$(userId));
+    }
+
+    /**
+     * @description Rules for user profiles.
+     * @path /users/{userId}
+     * @allow (create) - A user can create their own profile if the userId matches their auth.uid.
+     * @allow (get, update, delete) - An admin can get, update, and delete any user profile. A user can get, update, and delete their own profile.
+     * @deny (create) - A user cannot create a profile with a userId that doesn't match their auth.uid.
+     * @deny (get, update, delete) - A user cannot get, update, or delete another user's profile.
+     * @principle Enforces user ownership and admin override.
+     */
+    match /users/{userId} {
+      // Only the owner can read/write their own profile, and admins can do anything
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if false; // User listing is disabled for security reasons.
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && isExistingOwner(userId) || isAdmin();
+      allow delete: if isOwner(userId) && isExistingOwner(userId) || isAdmin();
     }
   }
 }

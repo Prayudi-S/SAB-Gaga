@@ -25,9 +25,72 @@
         "meterId": {
           "type": "string",
           "description": "The user's water meter ID."
+        },
+        "role": {
+          "type": "string",
+          "description": "The user's role.",
+          "enum": ["admin", "petugas", "user"]
         }
       },
-      "required": ["uid", "email", "fullName", "houseNumber", "meterId"]
+      "required": ["uid", "email", "fullName", "houseNumber", "meterId", "role"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Represents a water bill payment.",
+      "type": "object",
+      "properties": {
+        "residentId": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "number"
+        },
+        "month": {
+          "type": "number"
+        },
+        "year": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Paid", "Unpaid"]
+        },
+        "paymentDate": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "meterReadingId": {
+          "type": "string"
+        }
+      },
+      "required": ["residentId", "amount", "month", "year", "status"]
+    },
+    "MeterReading": {
+      "title": "Meter Reading",
+      "description": "Represents a water meter reading.",
+      "type": "object",
+      "properties": {
+        "residentId": {
+          "type": "string"
+        },
+        "reading": {
+          "type": "number"
+        },
+        "month": {
+          "type": "number"
+        },
+        "year": {
+          "type": "number"
+        },
+        "recordedBy": {
+          "type": "string"
+        },
+        "recordedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["residentId", "reading", "month", "year", "recordedBy", "recordedAt"]
     }
   },
   "auth": {
@@ -39,6 +102,18 @@
         "$ref": "#/entities/UserProfile"
       },
       "description": "Stores user profile information."
+    },
+    "/payments/{paymentId}": {
+      "schema": {
+        "$ref": "#/entities/Payment"
+      },
+      "description": "Stores payment records."
+    },
+    "/meterReadings/{readingId}": {
+      "schema": {
+        "$ref": "#/entities/MeterReading"
+      },
+      "description": "Stores water meter readings."
     }
   }
 }
