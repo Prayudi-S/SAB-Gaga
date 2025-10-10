@@ -13,3 +13,12 @@ export type Payment = {
   status: 'Paid' | 'Unpaid';
   paymentDate?: string;
 };
+
+export type UserProfile = {
+  uid: string;
+  email: string;
+  fullName: string;
+  houseNumber: string;
+  meterId: string;
+  role: 'admin' | 'petugas' | 'user';
+};

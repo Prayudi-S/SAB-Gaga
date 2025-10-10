@@ -5,20 +5,29 @@ import { useRouter } from 'next/navigation';
 import DashboardStats from "@/components/dashboard-stats";
 import PaymentTable from "@/components/payment-table";
 import { residents, payments } from "@/lib/data";
-import { useUser } from '@/firebase';
+import { useUser, useDoc } from '@/firebase';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { UserProfile } from '@/lib/types';
 
 export default function DashboardPage() {
-  const { user, loading } = useUser();
+  const { user, loading: userLoading } = useUser();
   const router = useRouter();
+  
+  // Fetch user profile from Firestore
+  const { data: userProfile, loading: profileLoading } = useDoc<UserProfile>(user ? `users/${user.uid}` : '');
+
+  const loading = userLoading || profileLoading;
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.push('/');
+    if (!loading) {
+      // If not loading and no user, or user is not an admin, redirect
+      if (!user || userProfile?.role !== 'admin') {
+        router.push('/');
+      }
     }
-  }, [user, loading, router]);
+  }, [user, userProfile, loading, router]);
 
-  if (loading || !user) {
+  if (loading || !user || userProfile?.role !== 'admin') {
     return (
         <div className="flex flex-col gap-4 md:gap-8 p-4 md:p-8">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
