@@ -1,99 +1,74 @@
 /**
  * @file Firestore Security Rules
- * @core_philosophy This ruleset enforces a role-based access control model,
- *  where 'admin' and 'petugas' roles have elevated privileges. User data
- *  is primarily accessible to the user themselves. All writes are guarded
- *  by authentication checks and role verification where appropriate.
- * @data_structure
- *  - /users/{userId}: Stores user profile information. Only the user or an admin can read/write.
- *  - /payments/{paymentId}: Stores payment records. Only admins can read/write.
- *  - /meterReadings/{readingId}: Stores water meter readings. Only petugas or admins can read/write.
- * @key_security_decisions
- *  - Listing of users is denied to all clients to protect user privacy.
- *  - Data validation is relaxed in this prototype, focusing on ownership and role-based access.
- * @denormalization_for_authorization N/A
- * @structural_segregation N/A
+ * @description This ruleset implements a role-based access control system.
+ *
+ * Core Philosophy:
+ *   - Access is determined by the user's 'role' field in their profile.
+ *   - The 'admin' role has full access to all data.
+ *   - Other roles have no access unless explicitly granted (not defined in the IR).
+ *
+ * Data Structure:
+ *   - User profiles are stored in the `/users/{userId}` collection.
+ *   - Payment records are stored in the `/payments/{paymentId}` collection.
+ *   - Meter readings are stored in the `/meterReadings/{readingId}` collection.
+ *
+ * Key Security Decisions:
+ *   - Only administrators can read, create, update, or delete any document in any collection.
+ *   - This configuration prioritizes security by default denying access to non-admin users.
+ *   - The rules are structured to be easily extended with more fine-grained permissions in the future.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Controls access to user profile documents.
+     * @description Manages user profile data, accessible only to admins.
      * @path /users/{userId}
-     * @allow (read): Authenticated user can read their own profile or an admin can read any profile.
-     * @allow (write): Authenticated user can create their own profile or an admin can create any profile.
-     * @deny   (read): Non-authenticated user tries to read a profile.
-     * @deny   (write): Non-authenticated user tries to write a profile.
-     * @principle Enforces user-ownership for profiles, allowing admins full access.
+     * @allow (read, create, update, delete) if the user is an admin.
+     * @deny (read, create, update, delete) if the user is not an admin.
+     * @principle Enforces role-based access control; only admins can manage user profiles.
      */
     match /users/{userId} {
-      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
-      allow list: if false;
-      allow create: if isSignedIn() && isOwner(userId);
-      allow update: if isSignedIn() && (isOwner(userId) || isAdmin());
-      allow delete: if isSignedIn() && isAdmin() ;
+      allow get: if isAdmin();
+      allow list: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     /**
-     * @description Controls access to payment documents.
+     * @description Manages payment records, accessible only to admins.
      * @path /payments/{paymentId}
-     * @allow (read): Only admins can read payment documents.
-     * @allow (write): Only admins can create, update, or delete payment documents.
-     * @deny   (read): Non-admin users tries to read payment documents.
-     * @deny   (write): Non-admin users tries to write payment documents.
-     * @principle Restricts all access to payment data to administrators.
+     * @allow (read, create, update, delete) if the user is an admin.
+     * @deny (read, create, update, delete) if the user is not an admin.
+     * @principle Enforces role-based access control; only admins can manage payment records.
      */
     match /payments/{paymentId} {
-      allow get: if isSignedIn() && isAdmin();
-      allow list: if isSignedIn() && isAdmin();
-      allow create: if isSignedIn() && isAdmin();
-      allow update: if isSignedIn() && isAdmin();
-      allow delete: if isSignedIn() && isAdmin();
+      allow get: if isAdmin();
+      allow list: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     /**
-     * @description Controls access to meter reading documents.
+     * @description Manages meter reading data, accessible only to admins.
      * @path /meterReadings/{readingId}
-     * @allow (read): Only petugas or admins can read meter readings.
-     * @allow (write): Only petugas or admins can create, update, or delete meter readings.
-     * @deny   (read): Non-petugas or non-admin users try to read meter readings.
-     * @deny   (write): Non-petugas or non-admin users try to write meter readings.
-     * @principle Restricts all access to meter reading data to petugas and administrators.
+     * @allow (read, create, update, delete) if the user is an admin.
+     * @deny (read, create, update, delete) if the user is not an admin.
+     * @principle Enforces role-based access control; only admins can manage meter readings.
      */
     match /meterReadings/{readingId} {
-      allow get: if isSignedIn() && (isPetugas() || isAdmin());
-      allow list: if isSignedIn() && (isPetugas() || isAdmin());
-      allow create: if isSignedIn() && (isPetugas() || isAdmin());
-      allow update: if isSignedIn() && (isPetugas() || isAdmin());
-      allow delete: if isSignedIn() && (isPetugas() || isAdmin());
+      allow get: if isAdmin();
+      allow list: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
-    // ---- Helper functions ----
-
-    // Checks if the user is signed in.
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    // Checks if the user is the owner of the resource.
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-
-    // Checks if the user has the admin role.
+    // Helper function to check if the user is an admin.
     function isAdmin() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    // Checks if the user has the petugas role.
-    function isPetugas() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'petugas';
-    }
-
-    // Checks if the user is an existing owner of the resource.
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource.data != null;
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
   }
 }
