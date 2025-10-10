@@ -174,29 +174,29 @@ export default function PaymentTable({ initialPayments, residents }: PaymentTabl
               </RecordPaymentDialog>
             </div>
           </div>
-          <div className="mt-4 rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Resident</TableHead>
-                  <TableHead>Period</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Paid On</TableHead>
-                  <TableHead>
-                    <span className="sr-only">Actions</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Object.entries(tabs).map(([key, value]) => (
-                  <TabsContent value={key} key={key} asChild>
-                    <>{renderPayments(value)}</>
-                  </TabsContent>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          {Object.entries(tabs).map(([key, value]) => (
+            <TabsContent value={key} key={key}>
+              <div className="mt-4 rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Resident</TableHead>
+                      <TableHead>Period</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Paid On</TableHead>
+                      <TableHead>
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {renderPayments(value)}
+                  </TableBody>
+                </Table>
+              </div>
+            </TabsContent>
+          ))}
         </Tabs>
       </CardContent>
     </Card>
