@@ -60,7 +60,7 @@ export default function Header() {
         <span className="font-headline text-xl">SAB Gaga</span>
       </Link>
       
-      {isAdminOrPetugas && (
+      {userProfile && (
         <nav className="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:items-center md:gap-5 md:text-sm lg:gap-6">
            <Link href="/dashboard" className={navLinkClasses("/dashboard")}>
             Dashboard
@@ -71,10 +71,12 @@ export default function Header() {
                 Users
             </Link>
           )}
-           <Link href="/dashboard/meter-readings" className={navLinkClasses("/dashboard/meter-readings")}>
-            <BookText className="h-4 w-4" />
-            Meter Readings
-          </Link>
+           {(userProfile?.role === 'admin' || userProfile?.role === 'petugas') && (
+            <Link href="/dashboard/meter-readings" className={navLinkClasses("/dashboard/meter-readings")}>
+                <BookText className="h-4 w-4" />
+                Meter Readings
+            </Link>
+           )}
         </nav>
       )}
 

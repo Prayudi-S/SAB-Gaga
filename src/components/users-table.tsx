@@ -59,16 +59,13 @@ export default function UsersTable({ initialUsers }: UsersTableProps) {
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
 
   const handleUserAdded = (newUser: UserProfile) => {
-    // In a real app with backend user creation, you'd re-fetch or get the new user.
-    // For this simulation, we'll just add it to the local state.
-    // A more robust solution involves a server-side function.
     setUsers(prev => [newUser, ...prev]);
   };
   
   const handleDeleteUser = async () => {
     if (!userToDelete || !firestore) return;
 
-    const userDocRef = doc(firestore, 'users', userToDelete.uid);
+    const userDocRef = doc(firestore, 'users', userToDelete.id);
 
     deleteDoc(userDocRef)
       .then(() => {
@@ -76,7 +73,7 @@ export default function UsersTable({ initialUsers }: UsersTableProps) {
           title: 'User Deleted',
           description: `User ${userToDelete.fullName} has been deleted.`,
         });
-        setUsers(prev => prev.filter(u => u.uid !== userToDelete.uid));
+        setUsers(prev => prev.filter(u => u.id !== userToDelete.id));
         setUserToDelete(null);
       })
       .catch((serverError) => {
@@ -154,7 +151,7 @@ export default function UsersTable({ initialUsers }: UsersTableProps) {
               <TableBody>
                 {filteredUsers.length > 0 ? (
                   filteredUsers.map(user => (
-                    <TableRow key={user.uid}>
+                    <TableRow key={user.id}>
                       <TableCell className="font-medium">{user.fullName}</TableCell>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>{user.houseNumber}</TableCell>

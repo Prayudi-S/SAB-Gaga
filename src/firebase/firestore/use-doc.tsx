@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { doc, onSnapshot, DocumentReference, DocumentData, DocumentSnapshot, FirestoreError } from 'firebase/firestore';
+import { doc, onSnapshot, DocumentData, DocumentSnapshot, FirestoreError } from 'firebase/firestore';
 import { useFirestore } from '../provider';
 import { errorEmitter } from '../error-emitter';
 import { FirestorePermissionError } from '../errors';
@@ -24,7 +24,7 @@ export function useDoc<T>(path: string | null) {
       docRef,
       (snapshot: DocumentSnapshot<DocumentData>) => {
         if (snapshot.exists()) {
-          setData({ uid: snapshot.id, ...snapshot.data() } as unknown as T);
+          setData({ id: snapshot.id, ...snapshot.data() } as unknown as T);
         } else {
           setData(null);
         }

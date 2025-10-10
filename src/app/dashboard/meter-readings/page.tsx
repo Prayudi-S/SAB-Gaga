@@ -72,31 +72,23 @@ export default function MeterReadingsPage() {
   const [readings, setReadings] = useState<MeterReading[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
 
-  const userProfilePath = useMemo(() => (user ? `users/${user.uid}` : null), [user]);
-  const { data: currentUserProfile, loading: profileLoading } = useDoc<UserProfile>(userProfilePath);
+  const { data: currentUserProfile, loading: profileLoading } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
   
   const canRecord = useMemo(() => currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'petugas', [currentUserProfile]);
 
   useEffect(() => {
+    // Wait until we know the user and their profile
     if (userLoading || profileLoading) {
       return; 
     }
 
+    // If no user, redirect to login
     if (!user) {
       router.push('/'); 
       return;
     }
-
-    if (!currentUserProfile) {
-      toast({
-          variant: 'destructive',
-          title: 'Profile Not Found',
-          description: 'Could not load your user profile. Redirecting...',
-      });
-      router.push('/dashboard');
-      return;
-    }
     
+    // If the user does not have the required role, redirect them.
     if (!canRecord) {
       toast({
           variant: 'destructive',
@@ -107,43 +99,32 @@ export default function MeterReadingsPage() {
       return;
     }
 
+    // Now that we know the user is authorized, fetch the necessary data
     async function fetchData() {
         if (!firestore) return;
         setPageLoading(true);
         try {
+            // Fetch all users for the dropdown
             const usersQuery = query(collection(firestore, 'users'));
-            await getDocs(usersQuery).then(
-              (usersSnapshot) => {
-                const usersData = usersSnapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile));
-                setUsers(usersData);
-              },
-              (serverError) => {
-                 const permissionError = new FirestorePermissionError({
-                    path: 'users',
-                    operation: 'list',
-                });
-                errorEmitter.emit('permission-error', permissionError);
-              }
-            );
+            const usersSnapshot = await getDocs(usersQuery);
+            const usersData = usersSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UserProfile));
+            setUsers(usersData);
 
+            // Fetch all readings for the history table
             const readingsQuery = query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc'));
-            await getDocs(readingsQuery).then(
-              (readingsSnapshot) => {
-                const readingsData = readingsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MeterReading));
-                setReadings(readingsData);
-              },
-              (serverError) => {
-                const permissionError = new FirestorePermissionError({
-                    path: 'meterReadings',
-                    operation: 'list',
-                });
-                errorEmitter.emit('permission-error', permissionError);
-              }
-            );
+            const readingsSnapshot = await getDocs(readingsQuery);
+            const readingsData = readingsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MeterReading));
+            setReadings(readingsData);
 
         } catch (error: any) {
-            // This catch is for any other unexpected errors during setup
-            if (!(error instanceof FirestorePermissionError)) {
+            console.error("Error fetching data:", error);
+            if (error.code === 'permission-denied') {
+                 const permissionError = new FirestorePermissionError({
+                    path: error.customData?.path || 'users or meterReadings',
+                    operation: 'list',
+                });
+                errorEmitter.emit('permission-error', permissionError);
+            } else {
                toast({
                     variant: 'destructive',
                     title: 'Failed to load data',
@@ -160,7 +141,7 @@ export default function MeterReadingsPage() {
   }, [user, userLoading, currentUserProfile, profileLoading, canRecord, firestore, router, toast]);
 
   const userMap = useMemo(() => {
-    return new Map(users.map(u => [u.uid, u.fullName]));
+    return new Map(users.map(u => [u.id, u.fullName]));
   }, [users]);
 
   const form = useForm<ReadingFormValues>({
@@ -213,7 +194,8 @@ export default function MeterReadingsPage() {
         errorEmitter.emit('permission-error', permissionError);
     });
   };
-
+  
+  // Display a skeleton loader while verifying auth, role, and fetching initial data
   if (userLoading || profileLoading || pageLoading) {
     return (
        <div className="grid gap-8 lg:grid-cols-3">
@@ -227,6 +209,7 @@ export default function MeterReadingsPage() {
     );
   }
   
+  // This will be true if the useEffect has redirected
   if (!canRecord) {
       return null;
   }
@@ -258,7 +241,7 @@ export default function MeterReadingsPage() {
                         </FormControl>
                         <SelectContent>
                           {users?.map((u) => (
-                            <SelectItem key={u.uid} value={u.uid}>
+                            <SelectItem key={u.id} value={u.id}>
                               {u.fullName}
                             </SelectItem>
                           ))}
@@ -376,5 +359,3 @@ export default function MeterReadingsPage() {
     </div>
   );
 }
-
-    

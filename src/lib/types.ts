@@ -16,6 +16,7 @@ export type Payment = {
 };
 
 export type UserProfile = {
+  id: string;
   uid: string;
   email: string;
   fullName: string;
