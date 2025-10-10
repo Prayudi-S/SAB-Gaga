@@ -78,19 +78,16 @@ export default function MeterReadingsPage() {
   const canRecord = useMemo(() => currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'petugas', [currentUserProfile]);
 
   useEffect(() => {
-    // Phase 1: Wait for auth and profile to finish loading.
     if (userLoading || profileLoading) {
-      return; // Wait until we know who the user is and what their role is.
+      return; 
     }
 
-    // Phase 2: Handle redirection or authorization.
     if (!user) {
-      router.push('/'); // Not logged in, redirect.
+      router.push('/'); 
       return;
     }
 
     if (!currentUserProfile) {
-      // Logged in but profile doesn't exist.
       toast({
           variant: 'destructive',
           title: 'Profile Not Found',
@@ -100,7 +97,6 @@ export default function MeterReadingsPage() {
       return;
     }
     
-    // User is logged in and has a profile. Now check role.
     if (!canRecord) {
       toast({
           variant: 'destructive',
@@ -111,18 +107,15 @@ export default function MeterReadingsPage() {
       return;
     }
 
-    // Phase 3: User is authorized (admin/petugas). Fetch all necessary data.
     async function fetchData() {
         if (!firestore) return;
-        setPageLoading(true); // Start loading page data.
+        setPageLoading(true);
         try {
-            // Fetch all users for the dropdown
             const usersQuery = query(collection(firestore, 'users'));
             const usersSnapshot = await getDocs(usersQuery);
             const usersData = usersSnapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as UserProfile));
             setUsers(usersData);
 
-            // Fetch all meter readings for the history table
             const readingsQuery = query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc'));
             const readingsSnapshot = await getDocs(readingsQuery);
             const readingsData = readingsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MeterReading));
@@ -130,7 +123,6 @@ export default function MeterReadingsPage() {
 
         } catch (error: any) {
             console.error("Failed to fetch data:", error);
-            // Let the error emitter handle permission errors, but show a toast for other errors.
             if (!(error instanceof FirestorePermissionError)) {
                toast({
                     variant: 'destructive',
@@ -139,13 +131,12 @@ export default function MeterReadingsPage() {
                 });
             }
         } finally {
-            setPageLoading(false); // Finish loading page data.
+            setPageLoading(false);
         }
     }
 
     fetchData();
     
-  // The dependency array ensures this effect runs only when the user/profile/auth state changes.
   }, [user, userLoading, currentUserProfile, profileLoading, canRecord, firestore, router, toast]);
 
   const userMap = useMemo(() => {
@@ -180,11 +171,10 @@ export default function MeterReadingsPage() {
             className: 'bg-green-100 border-green-300 text-green-900',
         });
         
-        // Optimistically update the UI
         const optimisticReading: MeterReading = {
             ...newReadingData,
             id: docRef.id,
-            recordedAt: new Date(), // Use current date for immediate feedback
+            recordedAt: new Date(),
         };
         setReadings(prev => [optimisticReading, ...prev]);
 
@@ -204,8 +194,6 @@ export default function MeterReadingsPage() {
     });
   };
 
-  // Show a full page skeleton while we verify authentication and authorization.
-  // This state persists until we know if the user is an admin/petugas and have fetched data.
   if (userLoading || profileLoading || pageLoading) {
     return (
        <div className="grid gap-8 lg:grid-cols-3">
@@ -219,8 +207,6 @@ export default function MeterReadingsPage() {
     );
   }
   
-  // This check is a safeguard. If the user isn't authorized, the effect above should have already redirected them.
-  // Returning null prevents any rendering attempt if the redirection is pending.
   if (!canRecord) {
       return null;
   }
