@@ -1,6 +1,6 @@
 'use client';
 
-import { useCollection, useUser } from '@/firebase';
+import { useCollection, useDoc, useUser } from '@/firebase';
 import type { UserProfile } from '@/lib/types';
 import UsersTable from '@/components/users-table';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -12,7 +12,7 @@ export default function UsersPage() {
   const router = useRouter();
 
   const { data: users, loading: usersLoading } = useCollection<UserProfile>('users');
-  const { data: currentUserProfile, loading: profileLoading } = useUserRole(user?.uid);
+  const { data: currentUserProfile, loading: profileLoading } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
 
   const isLoading = userLoading || usersLoading || profileLoading;
 
@@ -47,15 +47,4 @@ export default function UsersPage() {
       {users && <UsersTable initialUsers={users} />}
     </div>
   );
-}
-
-// Custom hook to get user role, similar to the one in dashboard page
-function useUserRole(uid: string | undefined) {
-    const { data: userProfile, loading } = useCollection<UserProfile>(
-        uid ? `users` : null
-    );
-
-    const currentUserProfile = userProfile?.find(p => p.uid === uid);
-
-    return { data: currentUserProfile, loading };
 }
