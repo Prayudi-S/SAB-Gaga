@@ -11,31 +11,35 @@ export default function UsersPage() {
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
 
-  // Fetch the current user's profile first to check their role.
+  // 1. Fetch the current user's profile to check their role.
   const { data: currentUserProfile, loading: profileLoading } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
 
-  // Conditionally fetch all users only if the current user is an admin.
+  // 2. Determine if the current user is an admin after their profile has loaded.
+  const isAdmin = !profileLoading && currentUserProfile?.role === 'admin';
+
+  // 3. Conditionally fetch all users ONLY if the current user is confirmed to be an admin.
   const { data: users, loading: usersLoading } = useCollection<UserProfile>(
-    currentUserProfile?.role === 'admin' ? 'users' : null
+    isAdmin ? 'users' : null
   );
 
-  const isLoading = userLoading || profileLoading || (currentUserProfile?.role === 'admin' && usersLoading);
-
+  // Determine overall loading state
+  const isLoading = userLoading || profileLoading || (isAdmin && usersLoading);
+  
   useEffect(() => {
-    // If user is not logged in, redirect to login page.
+    // If auth is done loading and there's no user, redirect to login.
     if (!userLoading && !user) {
       router.push('/');
       return;
     }
-    // If user is logged in but is not an admin, redirect to the main dashboard.
+    // If the profile is done loading and the user is NOT an admin, redirect away.
     if (!profileLoading && currentUserProfile && currentUserProfile.role !== 'admin') {
       router.push('/dashboard');
     }
   }, [user, userLoading, currentUserProfile, profileLoading, router]);
 
-
-  // Show skeleton loader while verifying auth state and role.
-  if (isLoading || !currentUserProfile || currentUserProfile.role !== 'admin') {
+  // Show a skeleton loader while we verify auth state and admin role.
+  // This also correctly handles the case where a non-admin is about to be redirected.
+  if (isLoading || !isAdmin) {
     return (
       <div className="flex flex-col gap-8">
         <div>
@@ -54,6 +58,7 @@ export default function UsersPage() {
     );
   }
 
+  // At this point, we are sure the user is an admin and the `users` data is either loaded or null (if collection is empty).
   return (
     <div className="flex flex-col gap-8">
       <div>
@@ -62,7 +67,7 @@ export default function UsersPage() {
           Add, edit, and manage users and their roles.
         </p>
       </div>
-      {/* Pass the fetched users to the table. `users` will only have data if the user is an admin. */}
+      {/* Pass the fetched users to the table. `users` will have data because the isAdmin check passed. */}
       {users && <UsersTable initialUsers={users} />}
     </div>
   );
