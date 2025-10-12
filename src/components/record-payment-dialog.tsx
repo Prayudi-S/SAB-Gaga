@@ -82,8 +82,9 @@ export function RecordPaymentDialog({ residents, onPaymentRecorded, children, op
       status: 'Paid',
       paymentDate: serverTimestamp(),
     };
-
+    
     const collectionRef = collection(firestore, 'payments');
+
     try {
       const docRef = await addDoc(collectionRef, newPaymentData);
       
@@ -102,6 +103,7 @@ export function RecordPaymentDialog({ residents, onPaymentRecorded, children, op
       });
       setOpen(false);
       form.reset();
+
     } catch (serverError: any) {
         const permissionError = new FirestorePermissionError({
             path: collectionRef.path,
