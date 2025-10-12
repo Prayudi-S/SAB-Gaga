@@ -6,7 +6,10 @@ import UsersTable from '@/components/users-table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
+
 
 export default function UsersPage() {
   const { user, loading: userLoading } = useUser();
@@ -14,7 +17,7 @@ export default function UsersPage() {
   const router = useRouter();
 
   const { data: currentUserProfile, loading: profileLoading } = useDoc<UserProfile>(
-    user ? `users/${user.id}` : null
+    user ? `users/${user.uid}` : null
   );
   
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -24,39 +27,40 @@ export default function UsersPage() {
   const isLoading = userLoading || profileLoading || (isAdmin && usersLoading);
 
   useEffect(() => {
-    // If auth is done and there's no user, redirect to login
     if (!userLoading && !user) {
       router.push('/');
       return;
     }
-    // If profile loading is done and we have a profile, but the user is not an admin, redirect
+    
     if (!profileLoading && currentUserProfile && currentUserProfile.role !== 'admin') {
       router.push('/dashboard');
+      return;
     }
 
-    // Fetch users only if the current user is an admin
     if (isAdmin && firestore) {
       const fetchUsers = async () => {
         setUsersLoading(true);
         try {
-          const usersSnapshot = await getDocs(collection(firestore, 'users'));
+          const usersSnapshot = await getDocs(query(collection(firestore, 'users')));
           const usersData = usersSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UserProfile));
           setUsers(usersData);
-        } catch (error) {
+        } catch (error: any) {
           console.error("Failed to fetch users:", error);
-          // Handle error appropriately, maybe show a toast
+          const permissionError = new FirestorePermissionError({
+              path: 'users',
+              operation: 'list',
+          });
+          errorEmitter.emit('permission-error', permissionError);
         } finally {
           setUsersLoading(false);
         }
       };
       fetchUsers();
-    } else if (!userLoading && !profileLoading && !isAdmin) {
-      // If user is determined not to be an admin, stop the users loading state
+    } else if (!isAdmin && !userLoading && !profileLoading) {
       setUsersLoading(false);
     }
   }, [user, userLoading, currentUserProfile, profileLoading, isAdmin, firestore, router]);
 
-  // Show a loading skeleton while we're verifying the user's role and fetching data
   if (isLoading) {
     return (
       <div className="flex flex-col gap-8">
@@ -76,8 +80,6 @@ export default function UsersPage() {
     );
   }
 
-  // If the user is not an admin after loading is complete, show nothing (or a message)
-  // The useEffect will handle redirection anyway.
   if (!isAdmin) {
     return null; 
   }

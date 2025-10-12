@@ -1,9 +1,3 @@
-export type Resident = {
-  id: string;
-  name: string;
-  address: string;
-};
-
 export type Payment = {
   id: string;
   residentId: string;
@@ -16,8 +10,8 @@ export type Payment = {
 };
 
 export type UserProfile = {
-  id: string;
-  uid: string;
+  id: string; // Document ID from Firestore, which is the same as UID from Auth
+  uid: string; // UID from Firebase Auth
   email: string;
   fullName: string;
   houseNumber: string;
@@ -31,6 +25,6 @@ export type MeterReading = {
   reading: number;
   month: number;
   year: number;
-  recordedBy: string;
+  recordedBy: string; // UID of petugas/admin
   recordedAt: unknown; // Firestore serverTimestamp
 };

@@ -5,11 +5,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Users, Banknote, AlertCircle, CheckCircle2 } from "lucide-react";
-import type { Payment, Resident } from "@/lib/types";
+import type { Payment, UserProfile } from "@/lib/types";
 
 type DashboardStatsProps = {
   payments: Payment[];
-  residents: Resident[];
+  residents: UserProfile[];
 };
 
 export default function DashboardStats({ payments, residents }: DashboardStatsProps) {

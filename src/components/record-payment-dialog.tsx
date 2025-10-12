@@ -34,20 +34,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
-import type { Payment, Resident } from '@/lib/types';
+import type { Payment, UserProfile } from '@/lib/types';
+import { useFirestore } from '@/firebase';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 const paymentSchema = z.object({
   residentId: z.string().min(1, "Resident is required."),
   amount: z.coerce.number().min(1, "Amount must be greater than 0."),
   month: z.coerce.number().min(1).max(12),
-  year: z.coerce.number().min(2020).max(new Date().getFullYear() + 1),
+  year: z.coerce.number().min(2020),
 });
 
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 
 type RecordPaymentDialogProps = {
-  residents: Resident[];
-  onPaymentRecorded: (payment: Omit<Payment, 'id'>) => void;
+  residents: UserProfile[];
+  onPaymentRecorded: (payment: Payment) => void;
   children: React.ReactNode;
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -60,6 +64,7 @@ const months = Array.from({ length: 12 }, (_, i) => ({
 
 export function RecordPaymentDialog({ residents, onPaymentRecorded, children, open, setOpen }: RecordPaymentDialogProps) {
   const { toast } = useToast();
+  const firestore = useFirestore();
   const form = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentSchema),
     defaultValues: {
@@ -69,20 +74,42 @@ export function RecordPaymentDialog({ residents, onPaymentRecorded, children, op
     },
   });
 
-  const onSubmit = (data: PaymentFormValues) => {
-    const newPayment: Omit<Payment, 'id'> = {
+  const onSubmit = async (data: PaymentFormValues) => {
+    if (!firestore) return;
+
+    const newPaymentData = {
       ...data,
       status: 'Paid',
-      paymentDate: new Date().toISOString(),
+      paymentDate: serverTimestamp(),
     };
-    onPaymentRecorded(newPayment);
-    toast({
-      title: "Payment Recorded",
-      description: `Payment for ${residents.find(r => r.id === data.residentId)?.name} has been successfully recorded.`,
-      className: 'bg-green-100 border-green-300 text-green-900'
-    });
-    setOpen(false);
-    form.reset();
+
+    const collectionRef = collection(firestore, 'payments');
+    try {
+      const docRef = await addDoc(collectionRef, newPaymentData);
+      
+      const newPaymentObject: Payment = {
+        ...data,
+        id: docRef.id,
+        status: 'Paid',
+        paymentDate: new Date().toISOString(),
+      };
+      
+      onPaymentRecorded(newPaymentObject);
+      toast({
+        title: "Payment Recorded",
+        description: `Payment for ${residents.find(r => r.id === data.residentId)?.fullName} has been successfully recorded.`,
+        className: 'bg-green-100 border-green-300 text-green-900'
+      });
+      setOpen(false);
+      form.reset();
+    } catch (serverError: any) {
+        const permissionError = new FirestorePermissionError({
+            path: collectionRef.path,
+            operation: 'create',
+            requestResourceData: newPaymentData,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+    }
   };
 
   return (
@@ -112,7 +139,7 @@ export function RecordPaymentDialog({ residents, onPaymentRecorded, children, op
                     <SelectContent>
                       {residents.map((resident) => (
                         <SelectItem key={resident.id} value={resident.id}>
-                          {resident.name}
+                          {resident.fullName} ({resident.houseNumber})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -141,11 +168,11 @@ export function RecordPaymentDialog({ residents, onPaymentRecorded, children, op
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Month</FormLabel>
-                     <Select onValueChange={field.onChange} defaultValue={String(field.value)}>
+                     <Select onValueChange={(val) => field.onChange(Number(val))} defaultValue={String(field.value)}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select month" />
-                        </SelectTrigger>
+                        </Trigger>
                       </FormControl>
                       <SelectContent>
                         {months.map((month) => (
@@ -174,7 +201,9 @@ export function RecordPaymentDialog({ residents, onPaymentRecorded, children, op
               />
             </div>
             <DialogFooter className="mt-4">
-              <Button type="submit">Record Payment</Button>
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? 'Recording...' : 'Record Payment'}
+                </Button>
             </DialogFooter>
           </form>
         </Form>

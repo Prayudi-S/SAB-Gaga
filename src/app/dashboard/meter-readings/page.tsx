@@ -52,7 +52,7 @@ const readingSchema = z.object({
   residentId: z.string().min(1, 'Resident UID is required.'),
   reading: z.coerce.number().min(0, 'Reading must be a positive number.'),
   month: z.coerce.number().min(1).max(12),
-  year: z.coerce.number().min(2020).max(new Date().getFullYear() + 5),
+  year: z.coerce.number().min(2020),
 });
 
 type ReadingFormValues = z.infer<typeof readingSchema>;
@@ -72,19 +72,17 @@ export default function MeterReadingsPage() {
   const [readings, setReadings] = useState<MeterReading[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
 
-  const { data: currentUserProfile, loading: profileLoading } = useDoc<UserProfile>(user ? `users/${user.id}` : null);
+  const { data: currentUserProfile, loading: profileLoading } = useDoc<UserProfile>(user ? `users/${user.uid}` : null);
   
   const userRole = useMemo(() => currentUserProfile?.role, [currentUserProfile]);
 
   useEffect(() => {
-    if (userLoading || !user) return;
-    if (profileLoading) return;
-    if (!currentUserProfile) {
-        // If profile isn't loaded and not loading, maybe they need to be redirected.
-        if(!profileLoading){
-            router.push('/');
-        }
-        return;
+    if (userLoading || profileLoading) {
+      return; 
+    }
+    if (!user || !currentUserProfile) {
+      router.push('/');
+      return;
     }
     
     async function fetchData() {
@@ -93,11 +91,12 @@ export default function MeterReadingsPage() {
         setPageLoading(true);
         try {
             let readingsData: MeterReading[] = [];
+            let usersData: UserProfile[] = [];
+
             // Admin/Petugas can see all readings and all users
             if (userRole === 'admin' || userRole === 'petugas') {
                 const usersSnapshot = await getDocs(query(collection(firestore, 'users')));
-                const usersData = usersSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UserProfile));
-                setUsers(usersData);
+                usersData = usersSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UserProfile));
 
                 const readingsSnapshot = await getDocs(query(collection(firestore, 'meterReadings'), orderBy('recordedAt', 'desc')));
                 readingsData = readingsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MeterReading));
@@ -106,15 +105,16 @@ export default function MeterReadingsPage() {
             else if (userRole === 'user') {
                 const readingsQuery = query(
                     collection(firestore, 'meterReadings'), 
-                    where('residentId', '==', user.id),
+                    where('residentId', '==', user.uid),
                     orderBy('recordedAt', 'desc')
                 );
                 const readingsSnapshot = await getDocs(readingsQuery);
                 readingsData = readingsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MeterReading));
                 if(currentUserProfile) {
-                    setUsers([currentUserProfile]);
+                    usersData = [currentUserProfile];
                 }
             }
+            setUsers(usersData);
             setReadings(readingsData);
 
         } catch (error: any) {
@@ -154,7 +154,7 @@ export default function MeterReadingsPage() {
 
     const newReadingData = {
       ...data,
-      recordedBy: user.id,
+      recordedBy: user.uid,
       recordedAt: serverTimestamp(),
     };
 
@@ -163,7 +163,7 @@ export default function MeterReadingsPage() {
     addDoc(collectionRef, newReadingData).then(docRef => {
         toast({
             title: 'Reading Recorded',
-            description: `Meter reading has been recorded for user UID ${data.residentId}.`,
+            description: `Meter reading has been recorded successfully.`,
             className: 'bg-green-100 border-green-300 text-green-900',
         });
         
@@ -191,20 +191,22 @@ export default function MeterReadingsPage() {
   };
   
   if (userLoading || profileLoading || pageLoading) {
-    const isOperator = userRole === 'admin' || userRole === 'petugas';
+    const canRecord = userRole === 'admin' || userRole === 'petugas';
     return (
-       <div className={`grid gap-8 ${isOperator ? 'lg:grid-cols-3' : 'lg:grid-cols-1'}`}>
-        {isOperator && (
+       <div className={`grid gap-8 ${canRecord ? 'lg:grid-cols-3' : 'lg:grid-cols-1'}`}>
+        {canRecord && (
             <div className="lg:col-span-1">
                 <Skeleton className="h-[550px] w-full" />
             </div>
         )}
-        <div className={isOperator ? "lg:col-span-2" : "lg:col-span-1"}>
+        <div className={canRecord ? "lg:col-span-2" : "lg:col-span-1"}>
             <Skeleton className="h-[550px] w-full" />
         </div>
       </div>
     );
   }
+
+  const canRecord = userRole === 'admin' || userRole === 'petugas';
 
   const renderFormForOperators = () => (
       <div className="lg:col-span-1">
@@ -291,11 +293,11 @@ export default function MeterReadingsPage() {
       </div>
   );
 
-  const historyCardClass = userRole === 'user' ? 'lg:col-span-1' : 'lg:col-span-2';
+  const historyCardClass = !canRecord ? 'lg:col-span-3' : 'lg:col-span-2';
 
   return (
-    <div className={`grid gap-8 ${userRole === 'user' ? 'lg:grid-cols-1' : 'lg:grid-cols-3'}`}>
-      { (userRole === 'admin' || userRole === 'petugas') && renderFormForOperators() }
+    <div className={`grid grid-cols-1 gap-8 lg:grid-cols-3`}>
+      { canRecord && renderFormForOperators() }
 
       <div className={historyCardClass}>
         <Card>
@@ -308,18 +310,18 @@ export default function MeterReadingsPage() {
                 <Table>
                 <TableHeader>
                     <TableRow>
-                    <TableHead>Resident</TableHead>
+                    {canRecord && <TableHead>Resident</TableHead>}
                     <TableHead>Period</TableHead>
                     <TableHead>Reading (m³)</TableHead>
                     <TableHead>Recorded On</TableHead>
-                    <TableHead>Recorded By</TableHead>
+                    {canRecord && <TableHead>Recorded By</TableHead>}
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {readings && readings.length > 0 ? (
                     readings.map(reading => (
                         <TableRow key={reading.id}>
-                        <TableCell className="font-medium">{userMap.get(reading.residentId) || reading.residentId}</TableCell>
+                        {canRecord && <TableCell className="font-medium">{userMap.get(reading.residentId) || reading.residentId}</TableCell>}
                         <TableCell>{months.find(m => m.value === reading.month)?.label} {reading.year}</TableCell>
                         <TableCell>{reading.reading}</TableCell>
                         <TableCell>
@@ -327,12 +329,12 @@ export default function MeterReadingsPage() {
                                 format(new Date((reading.recordedAt as any).seconds * 1000), 'dd MMMM yyyy, HH:mm', { locale: id }) 
                                 : (reading.recordedAt instanceof Date ? format(reading.recordedAt, 'dd MMMM yyyy, HH:mm', { locale: id }) : 'Just now')}
                         </TableCell>
-                        <TableCell>{userMap.get(reading.recordedBy) || 'Unknown'}</TableCell>
+                        {canRecord && <TableCell>{userMap.get(reading.recordedBy) || 'Unknown'}</TableCell>}
                         </TableRow>
                     ))
                     ) : (
                     <TableRow>
-                        <TableCell colSpan={5} className="h-24 text-center">
+                        <TableCell colSpan={canRecord ? 5 : 3} className="h-24 text-center">
                         No readings recorded yet.
                         </TableCell>
                     </TableRow>

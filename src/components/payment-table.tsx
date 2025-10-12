@@ -31,42 +31,92 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { Payment, Resident } from '@/lib/types';
+import type { Payment, UserProfile } from '@/lib/types';
 import { RecordPaymentDialog } from './record-payment-dialog';
+import { useFirestore } from '@/firebase';
+import { useToast } from '@/hooks/use-toast';
+import { doc, updateDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
+
 
 type PaymentTableProps = {
   initialPayments: Payment[];
-  residents: Resident[];
+  residents: UserProfile[];
+  userRole: 'admin' | 'petugas' | 'user';
 };
 
-export default function PaymentTable({ initialPayments, residents }: PaymentTableProps) {
+export default function PaymentTable({ initialPayments, residents, userRole }: PaymentTableProps) {
   const [payments, setPayments] = useState<Payment[]>(initialPayments);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [paymentToDelete, setPaymentToDelete] = useState<Payment | null>(null);
+  const firestore = useFirestore();
+  const { toast } = useToast();
 
   const residentMap = useMemo(() => {
-    return new Map(residents.map(r => [r.id, r.name]));
+    return new Map(residents.map(r => [r.id, r.fullName]));
   }, [residents]);
 
-  const handlePaymentRecorded = (newPayment: Omit<Payment, 'id'>) => {
-    const paymentWithId = { ...newPayment, id: `pay-${Date.now()}` };
-    setPayments(prev => [paymentWithId, ...prev]);
+  const handlePaymentRecorded = (newPayment: Payment) => {
+    setPayments(prev => [newPayment, ...prev]);
+  };
+  
+  const togglePaymentStatus = (paymentId: string) => {
+    const payment = payments.find(p => p.id === paymentId);
+    if (!payment || !firestore) return;
+
+    const newStatus = payment.status === 'Unpaid' ? 'Paid' : 'Unpaid';
+    const paymentUpdate = {
+      status: newStatus,
+      paymentDate: newStatus === 'Paid' ? serverTimestamp() : null,
+    };
+
+    const docRef = doc(firestore, 'payments', paymentId);
+    updateDoc(docRef, paymentUpdate)
+      .then(() => {
+        setPayments(prev =>
+          prev.map(p => p.id === paymentId ? { ...p, status: newStatus, paymentDate: new Date().toISOString() } : p)
+        );
+        toast({ title: "Status Updated", description: `Payment marked as ${newStatus}.` });
+      })
+      .catch(serverError => {
+        const permissionError = new FirestorePermissionError({
+          path: docRef.path,
+          operation: 'update',
+          requestResourceData: paymentUpdate,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      });
   };
 
-  const togglePaymentStatus = (paymentId: string) => {
-    setPayments(prevPayments =>
-      prevPayments.map(p => {
-        if (p.id === paymentId) {
-          const isNowPaid = p.status === 'Unpaid';
-          return {
-            ...p,
-            status: isNowPaid ? 'Paid' : 'Unpaid',
-            paymentDate: isNowPaid ? new Date().toISOString() : undefined,
-          };
-        }
-        return p;
+  const handleDeletePayment = () => {
+    if (!paymentToDelete || !firestore) return;
+    const docRef = doc(firestore, 'payments', paymentToDelete.id);
+    deleteDoc(docRef)
+      .then(() => {
+        setPayments(prev => prev.filter(p => p.id !== paymentToDelete.id));
+        toast({ title: 'Payment Deleted', description: 'Payment record has been removed.' });
+        setPaymentToDelete(null);
       })
-    );
+      .catch(serverError => {
+        const permissionError = new FirestorePermissionError({
+          path: docRef.path,
+          operation: 'delete',
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        setPaymentToDelete(null);
+      });
   };
   
   const getMonthName = (monthNumber: number) => {
@@ -74,6 +124,8 @@ export default function PaymentTable({ initialPayments, residents }: PaymentTabl
       date.setMonth(monthNumber - 1);
       return format(date, "MMMM", { locale: id });
   }
+  
+  const canManage = userRole === 'admin' || userRole === 'petugas';
 
   const renderPayments = (paymentList: Payment[]) => {
     const filteredList = paymentList.filter(payment => {
@@ -84,7 +136,7 @@ export default function PaymentTable({ initialPayments, residents }: PaymentTabl
     if (filteredList.length === 0) {
       return (
         <TableRow>
-          <TableCell colSpan={6} className="h-24 text-center">
+          <TableCell colSpan={canManage ? 6 : 4} className="h-24 text-center">
             No results found.
           </TableCell>
         </TableRow>
@@ -93,9 +145,9 @@ export default function PaymentTable({ initialPayments, residents }: PaymentTabl
 
     return filteredList.map(payment => (
       <TableRow key={payment.id}>
-        <TableCell className="font-medium">
+        {canManage && <TableCell className="font-medium">
           {residentMap.get(payment.residentId) || 'Unknown'}
-        </TableCell>
+        </TableCell>}
         <TableCell>{getMonthName(payment.month)} {payment.year}</TableCell>
         <TableCell>
           {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(payment.amount)}
@@ -108,7 +160,7 @@ export default function PaymentTable({ initialPayments, residents }: PaymentTabl
         <TableCell>
           {payment.paymentDate ? format(new Date(payment.paymentDate), 'dd MMMM yyyy', { locale: id }) : 'N/A'}
         </TableCell>
-        <TableCell>
+        {canManage && <TableCell>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button aria-haspopup="true" size="icon" variant="ghost">
@@ -121,11 +173,15 @@ export default function PaymentTable({ initialPayments, residents }: PaymentTabl
               <DropdownMenuItem onClick={() => togglePaymentStatus(payment.id)}>
                 {payment.status === 'Unpaid' ? 'Mark as Paid' : 'Mark as Unpaid'}
               </DropdownMenuItem>
-              <DropdownMenuItem>Edit</DropdownMenuItem>
-              <DropdownMenuItem className="text-red-600">Delete</DropdownMenuItem>
+              {userRole === 'admin' && <DropdownMenuItem
+                className="text-red-600"
+                onClick={() => setPaymentToDelete(payment)}
+                >
+                Delete
+              </DropdownMenuItem>}
             </DropdownMenuContent>
           </DropdownMenu>
-        </TableCell>
+        </TableCell>}
       </TableRow>
     ));
   };
@@ -137,10 +193,15 @@ export default function PaymentTable({ initialPayments, residents }: PaymentTabl
   };
 
   return (
+    <>
     <Card>
       <CardHeader>
-        <CardTitle className="font-headline">Payment Records</CardTitle>
-        <CardDescription>Manage and track resident payments.</CardDescription>
+        <CardTitle className="font-headline">
+          {canManage ? 'Payment Records' : 'My Payment History'}
+        </CardTitle>
+        <CardDescription>
+          {canManage ? 'Manage and track resident payments.' : 'A log of all your past payments.'}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="All">
@@ -150,7 +211,7 @@ export default function PaymentTable({ initialPayments, residents }: PaymentTabl
               <TabsTrigger value="Paid">Paid</TabsTrigger>
               <TabsTrigger value="Unpaid">Unpaid</TabsTrigger>
             </TabsList>
-            <div className="flex items-center gap-2">
+            {canManage && <div className="flex items-center gap-2">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -172,7 +233,7 @@ export default function PaymentTable({ initialPayments, residents }: PaymentTabl
                     Record Payment
                   </Button>
               </RecordPaymentDialog>
-            </div>
+            </div>}
           </div>
           {Object.entries(tabs).map(([key, value]) => (
             <TabsContent value={key} key={key}>
@@ -180,14 +241,14 @@ export default function PaymentTable({ initialPayments, residents }: PaymentTabl
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Resident</TableHead>
+                      {canManage && <TableHead>Resident</TableHead>}
                       <TableHead>Period</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Paid On</TableHead>
-                      <TableHead>
+                      {canManage && <TableHead>
                         <span className="sr-only">Actions</span>
-                      </TableHead>
+                      </TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -200,5 +261,25 @@ export default function PaymentTable({ initialPayments, residents }: PaymentTabl
         </Tabs>
       </CardContent>
     </Card>
+     <AlertDialog open={!!paymentToDelete} onOpenChange={(open) => !open && setPaymentToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the payment record.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPaymentToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeletePayment}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
