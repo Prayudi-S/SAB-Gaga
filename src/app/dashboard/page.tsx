@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, query, getDocs } from 'firebase/firestore';
+import { collection, query, getDocs, where } from 'firebase/firestore';
 
 import DashboardStats from "@/components/dashboard-stats";
 import PaymentTable from "@/components/payment-table";
@@ -44,8 +44,8 @@ function DashboardContent() {
                 ]);
                 setPayments(paymentsSnapshot.docs.map(doc => ({...doc.data(), id: doc.id} as Payment)));
                 setResidents(residentsSnapshot.docs.map(doc => ({...doc.data(), id: doc.id} as UserProfile)));
-            } else { // 'user'
-                 const paymentsQuery = query(collection(firestore, 'payments'), where('residentId', '==', user?.uid));
+            } else if (user?.uid) { // 'user'
+                 const paymentsQuery = query(collection(firestore, 'payments'), where('residentId', '==', user.uid));
                  const paymentsSnapshot = await getDocs(paymentsQuery);
                  setPayments(paymentsSnapshot.docs.map(doc => ({...doc.data(), id: doc.id} as Payment)));
                  if (userProfile) {
@@ -71,7 +71,7 @@ function DashboardContent() {
                 <Skeleton className="h-32" />
                 <Skeleton className="h-32" />
                 <Skeleton className="h-32" />
-                <Skeleton className-="h-32" />
+                <Skeleton className="h-32" />
             </div>
             <Skeleton className="h-96" />
         </div>
@@ -97,7 +97,7 @@ function DashboardContent() {
             <CardDescription>This is your personal dashboard where you can see your payment history.</CardDescription>
         </CardHeader>
        </Card>
-      <PaymentTable initialPayments={payments} residents={userProfile ? [userProfile] : []} userRole={userRole} />
+      <PaymentTable initialPayments={payments} residents={userProfile ? [userProfile] : []} userRole={userRole || 'user'} />
     </div>
   )
 }

@@ -44,7 +44,7 @@ const paymentSchema = z.object({
   residentId: z.string().min(1, "Resident is required."),
   amount: z.coerce.number().min(1, "Amount must be greater than 0."),
   month: z.coerce.number().min(1).max(12),
-  year: z.coerce.number().min(2020),
+  year: z.coerce.number().min(2020)
 });
 
 type PaymentFormValues = z.infer<typeof paymentSchema>;
@@ -71,14 +71,15 @@ export function RecordPaymentDialog({ residents, onPaymentRecorded, children, op
       month: new Date().getMonth() + 1,
       year: new Date().getFullYear(),
       amount: 75000,
+      residentId: '',
     },
   });
 
-  const onSubmit = async (data: PaymentFormValues) => {
+  const onSubmit = async (values: PaymentFormValues) => {
     if (!firestore) return;
 
     const newPaymentData = {
-      ...data,
+      ...values,
       status: 'Paid',
       paymentDate: serverTimestamp(),
     };
@@ -89,7 +90,7 @@ export function RecordPaymentDialog({ residents, onPaymentRecorded, children, op
       const docRef = await addDoc(collectionRef, newPaymentData);
       
       const newPaymentObject: Payment = {
-        ...data,
+        ...values,
         id: docRef.id,
         status: 'Paid',
         paymentDate: new Date().toISOString(),
@@ -98,7 +99,7 @@ export function RecordPaymentDialog({ residents, onPaymentRecorded, children, op
       onPaymentRecorded(newPaymentObject);
       toast({
         title: "Payment Recorded",
-        description: `Payment for ${residents.find(r => r.id === data.residentId)?.fullName} has been successfully recorded.`,
+        description: `Payment for ${residents.find(r => r.id === values.residentId)?.fullName} has been successfully recorded.`,
         className: 'bg-green-100 border-green-300 text-green-900'
       });
       setOpen(false);
@@ -203,6 +204,7 @@ export function RecordPaymentDialog({ residents, onPaymentRecorded, children, op
               />
             </div>
             <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={form.formState.isSubmitting}>
                 {form.formState.isSubmitting ? 'Recording...' : 'Record Payment'}
                 </Button>
