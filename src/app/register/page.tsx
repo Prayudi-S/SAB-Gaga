@@ -59,19 +59,21 @@ export default function RegisterPage() {
   });
 
   const onSubmit = async (data: RegisterFormValues) => {
+    if (!auth || !firestore) {
+      toast({
+        variant: 'destructive',
+        title: 'Registration Failed',
+        description: 'Firebase not initialized. Please try again later.',
+      });
+      return;
+    }
+    
     try {
-      if (!auth || !firestore) {
-        toast({
-          variant: 'destructive',
-          title: 'Registration Failed',
-          description: 'Firebase not initialized. Please try again later.',
-        });
-        return;
-      }
-      
+      // 1. Create user in Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
       const user = userCredential.user;
 
+      // 2. Prepare user profile data for Firestore
       const userProfile = {
         uid: user.uid,
         email: data.email,
@@ -81,17 +83,16 @@ export default function RegisterPage() {
         role: 'user', // Default role for new users
       };
 
+      // 3. Save user profile to Firestore
       const userDocRef = doc(firestore, 'users', user.uid);
-      
-      setDoc(userDocRef, userProfile)
-        .catch((serverError) => {
-          const permissionError = new FirestorePermissionError({
+      setDoc(userDocRef, userProfile).catch((serverError) => {
+         const permissionError = new FirestorePermissionError({
             path: userDocRef.path,
             operation: 'create',
             requestResourceData: userProfile,
           });
           errorEmitter.emit('permission-error', permissionError);
-        });
+      });
 
       toast({
         title: 'Registration Successful',
@@ -100,12 +101,23 @@ export default function RegisterPage() {
       });
 
       router.push('/dashboard');
+
     } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Registration Failed',
-        description: error.message || 'An unknown error occurred.',
-      });
+       // Handle Auth errors (e.g., email-already-in-use)
+       if (error.code && error.code.startsWith('auth/')) {
+         toast({
+            variant: 'destructive',
+            title: 'Registration Failed',
+            description: error.message,
+          });
+       } else {
+         console.error("An unexpected error occurred during registration: ", error)
+         toast({
+            variant: 'destructive',
+            title: 'Registration Failed',
+            description: "An unexpected error occurred. Please check the console.",
+          });
+       }
     }
   };
 
@@ -159,7 +171,7 @@ export default function RegisterPage() {
                     name="meterId"
                     render={({ field }) => (
                         <FormItem>
-                        <FormLabel>Water Meter ID</FormLabel>
+                        <FormLabel>Customer ID</FormLabel>
                         <FormControl>
                             <Input placeholder="e.g. 123456" {...field} />
                         </FormControl>
@@ -194,8 +206,8 @@ export default function RegisterPage() {
                     </FormItem>
                   )}
                 />
-                <Button type="submit" className="w-full !mt-6">
-                  Create Account
+                <Button type="submit" className="w-full !mt-6" disabled={form.formState.isSubmitting}>
+                  {form.formState.isSubmitting ? 'Creating Account...' : 'Create Account'}
                 </Button>
               </form>
             </Form>

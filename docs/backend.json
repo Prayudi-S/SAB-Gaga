@@ -28,8 +28,8 @@
         },
         "role": {
           "type": "string",
-          "description": "The user's role.",
-          "enum": ["admin", "petugas", "user"]
+          "description": "The user's role, assigned automatically on registration.",
+          "enum": ["user"]
         }
       },
       "required": ["uid", "email", "fullName", "houseNumber", "meterId", "role"]

@@ -25,8 +25,9 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/firebase';
+import { useAuth, useUser } from '@/firebase';
 import { Droplets } from 'lucide-react';
+import { useEffect } from 'react';
 
 const formSchema = z.object({
   email: z.string().email('Invalid email address.'),
@@ -38,7 +39,15 @@ type LoginFormValues = z.infer<typeof formSchema>;
 export default function LoginPage() {
   const router = useRouter();
   const auth = useAuth();
+  const { user, loading } = useUser();
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (!loading && user) {
+      router.push('/dashboard');
+    }
+  }, [user, loading, router]);
+
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(formSchema),
@@ -49,15 +58,15 @@ export default function LoginPage() {
   });
 
   const onSubmit = async (data: LoginFormValues) => {
+    if (!auth) {
+      toast({
+        variant: 'destructive',
+        title: 'Login Failed',
+        description: 'Firebase not initialized. Please try again later.',
+      });
+      return;
+    }
     try {
-      if (!auth) {
-        toast({
-          variant: 'destructive',
-          title: 'Login Failed',
-          description: 'Firebase not initialized. Please try again later.',
-        });
-        return;
-      }
       await signInWithEmailAndPassword(auth, data.email, data.password);
       toast({
         title: 'Login Successful',
@@ -72,6 +81,17 @@ export default function LoginPage() {
       });
     }
   };
+  
+  if (loading || user) {
+    return (
+       <main className="flex min-h-screen w-full items-center justify-center bg-background p-4">
+        <div className="flex flex-col items-center gap-4">
+          <Droplets className="h-12 w-12 text-primary animate-pulse" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </main>
+    )
+  }
 
   return (
     <main className="flex min-h-screen w-full items-center justify-center bg-background p-4">
@@ -122,8 +142,8 @@ export default function LoginPage() {
                     </FormItem>
                   )}
                 />
-                <Button type="submit" className="w-full !mt-6">
-                  Sign In
+                <Button type="submit" className="w-full !mt-6" disabled={form.formState.isSubmitting}>
+                   {form.formState.isSubmitting ? 'Signing In...' : 'Sign In'}
                 </Button>
               </form>
             </Form>
