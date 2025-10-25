@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Card, CardContent } from '@/components/ui/card';
-import { Camera, X, RotateCcw, Check } from 'lucide-react';
+import { Camera, X, RotateCcw, Check, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface CameraCaptureProps {
@@ -26,13 +26,30 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
 
   const startCamera = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment', // Use back camera
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
-      });
+      // Check if mediaDevices is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera not supported');
+      }
+
+      // Try with environment camera first, fallback to any camera
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment', // Use back camera
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 }
+          }
+        });
+      } catch (envError) {
+        console.log('Environment camera not available, trying any camera...');
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 }
+          }
+        });
+      }
       
       streamRef.current = stream;
       
@@ -48,7 +65,7 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
         toast({
           variant: 'destructive',
           title: 'Akses Kamera Ditolak',
-          description: 'Izinkan akses kamera untuk mengambil foto meter air.'
+          description: 'Izinkan akses kamera untuk mengambil foto meter air. Pastikan aplikasi berjalan di HTTPS.'
         });
       } else if (error.name === 'NotFoundError') {
         toast({
@@ -56,11 +73,17 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
           title: 'Kamera Tidak Ditemukan',
           description: 'Tidak ada kamera yang tersedia di perangkat ini.'
         });
+      } else if (error.message === 'Camera not supported') {
+        toast({
+          variant: 'destructive',
+          title: 'Kamera Tidak Didukung',
+          description: 'Browser Anda tidak mendukung akses kamera. Gunakan browser modern seperti Chrome atau Safari.'
+        });
       } else {
         toast({
           variant: 'destructive',
           title: 'Error Kamera',
-          description: 'Gagal mengakses kamera. Pastikan perangkat mendukung kamera.'
+          description: 'Gagal mengakses kamera. Pastikan perangkat mendukung kamera dan aplikasi berjalan di HTTPS.'
         });
       }
     }
@@ -130,6 +153,16 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
     }
   }, [stopCamera]);
 
+  // Auto-start camera when dialog opens
+  useEffect(() => {
+    if (isOpen && !capturedImage) {
+      const timer = setTimeout(() => {
+        startCamera();
+      }, 100); // Small delay to ensure dialog is rendered
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, capturedImage, startCamera]);
+
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
@@ -143,7 +176,7 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
         </Button>
       </DialogTrigger>
       
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Ambil Foto Meter Air</DialogTitle>
           <DialogDescription>
@@ -156,30 +189,42 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
             {!capturedImage ? (
               <div className="space-y-4">
                 {!isStreaming ? (
-                  <div className="flex flex-col items-center justify-center h-64 bg-gray-100 rounded-lg">
-                    <Camera className="w-12 h-12 text-gray-400 mb-4" />
-                    <p className="text-gray-600 mb-4">Klik tombol di bawah untuk memulai kamera</p>
-                    <Button onClick={startCamera} disabled={isProcessing}>
-                      {isProcessing ? 'Memproses...' : 'Mulai Kamera'}
-                    </Button>
+                  <div className="flex flex-col items-center justify-center h-[50vh] sm:h-64 bg-gray-100 rounded-lg">
+                    {isProcessing ? (
+                      <>
+                        <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
+                        <p className="text-gray-600 mb-4">Memulai kamera...</p>
+                      </>
+                    ) : (
+                      <>
+                        <Camera className="w-12 h-12 text-gray-400 mb-4" />
+                        <p className="text-gray-600 mb-4 text-center px-4">
+                          Kamera akan dimulai otomatis. Jika tidak muncul, klik tombol di bawah.
+                        </p>
+                        <Button onClick={startCamera} disabled={isProcessing}>
+                          {isProcessing ? 'Memproses...' : 'Mulai Kamera'}
+                        </Button>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-4">
                     <div className="relative">
                       <video
                         ref={videoRef}
-                        className="w-full h-64 object-cover rounded-lg"
+                        className="w-full h-[50vh] sm:h-64 object-cover rounded-lg"
                         playsInline
                         muted
+                        autoPlay
                       />
                     </div>
                     
-                    <div className="flex gap-2 justify-center">
-                      <Button onClick={capturePhoto} size="lg">
+                    <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                      <Button onClick={capturePhoto} size="lg" className="w-full sm:w-auto">
                         <Camera className="w-4 h-4 mr-2" />
                         Ambil Foto
                       </Button>
-                      <Button variant="outline" onClick={() => handleOpenChange(false)}>
+                      <Button variant="outline" onClick={() => handleOpenChange(false)} className="w-full sm:w-auto">
                         <X className="w-4 h-4 mr-2" />
                         Batal
                       </Button>
@@ -193,20 +238,29 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
                   <img
                     src={capturedImage}
                     alt="Captured meter"
-                    className="w-full h-64 object-cover rounded-lg"
+                    className="w-full h-[50vh] sm:h-64 object-cover rounded-lg"
                   />
                 </div>
                 
-                <div className="flex gap-2 justify-center">
-                  <Button onClick={confirmPhoto} size="lg" disabled={isProcessing}>
-                    <Check className="w-4 h-4 mr-2" />
-                    {isProcessing ? 'Memproses...' : 'Gunakan Foto Ini'}
+                <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                  <Button onClick={confirmPhoto} size="lg" disabled={isProcessing} className="w-full sm:w-auto">
+                    {isProcessing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Memproses...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4 mr-2" />
+                        Gunakan Foto Ini
+                      </>
+                    )}
                   </Button>
-                  <Button variant="outline" onClick={retakePhoto} disabled={isProcessing}>
+                  <Button variant="outline" onClick={retakePhoto} disabled={isProcessing} className="w-full sm:w-auto">
                     <RotateCcw className="w-4 h-4 mr-2" />
                     Ambil Ulang
                   </Button>
-                  <Button variant="outline" onClick={() => handleOpenChange(false)}>
+                  <Button variant="outline" onClick={() => handleOpenChange(false)} className="w-full sm:w-auto">
                     <X className="w-4 h-4 mr-2" />
                     Batal
                   </Button>

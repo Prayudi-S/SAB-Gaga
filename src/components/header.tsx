@@ -1,8 +1,9 @@
 'use client'
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { LogOut, User, Droplets, Users, SlidersHorizontal, BookText } from "lucide-react";
+import { LogOut, User, Droplets, Users, SlidersHorizontal, BookText, Menu } from "lucide-react";
 import { getAuth, signOut } from "firebase/auth";
 import { useRouter, usePathname } from "next/navigation";
 
@@ -15,6 +16,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
 import { PlaceHolderImages } from "@/lib/placeholder-images";
 import { useUser, useDoc } from "@/firebase";
 import { useToast } from "@/hooks/use-toast";
@@ -28,6 +31,7 @@ export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
   const { toast } = useToast();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleLogout = async () => {
     const auth = getAuth();
@@ -39,6 +43,11 @@ export default function Header() {
       console.error("Logout error:", error);
       toast({ variant: "destructive", title: "Logout Failed", description: "Could not log you out. Please try again." });
     }
+  };
+
+  const handleMobileNav = (href: string) => {
+    router.push(href);
+    setIsMobileMenuOpen(false);
   };
 
   const getInitials = (email?: string | null) => {
@@ -60,6 +69,58 @@ export default function Header() {
         <span className="font-headline text-xl">SAB Gaga</span>
       </Link>
       
+      {/* Mobile Menu Button */}
+      {userProfile && (
+        <div className="md:hidden">
+          <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="text-primary-foreground">
+                <Menu className="h-6 w-6" />
+                <span className="sr-only">Toggle menu</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-[300px] sm:w-[400px]">
+              <SheetHeader>
+                <SheetTitle className="flex items-center gap-2">
+                  <Droplets className="h-5 w-5" />
+                  SAB Gaga
+                </SheetTitle>
+              </SheetHeader>
+              <nav className="flex flex-col gap-4 mt-6">
+                <Button
+                  variant={pathname === "/dashboard" ? "default" : "ghost"}
+                  className="justify-start"
+                  onClick={() => handleMobileNav("/dashboard")}
+                >
+                  Dashboard
+                </Button>
+                {userProfile?.role === 'admin' && (
+                  <Button
+                    variant={pathname === "/dashboard/users" ? "default" : "ghost"}
+                    className="justify-start"
+                    onClick={() => handleMobileNav("/dashboard/users")}
+                  >
+                    <Users className="mr-2 h-4 w-4" />
+                    Users
+                  </Button>
+                )}
+                {(userProfile?.role === 'admin' || userProfile?.role === 'petugas') && (
+                  <Button
+                    variant={pathname === "/dashboard/meter-record" ? "default" : "ghost"}
+                    className="justify-start"
+                    onClick={() => handleMobileNav("/dashboard/meter-record")}
+                  >
+                    <BookText className="mr-2 h-4 w-4" />
+                    Meter Record
+                  </Button>
+                )}
+              </nav>
+            </SheetContent>
+          </Sheet>
+        </div>
+      )}
+      
+      {/* Desktop Navigation */}
       {userProfile && (
         <nav className="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:items-center md:gap-5 md:text-sm lg:gap-6">
            <Link href="/dashboard" className={navLinkClasses("/dashboard")}>
