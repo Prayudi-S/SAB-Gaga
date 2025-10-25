@@ -17,6 +17,7 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
   const [isStreaming, setIsStreaming] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -25,15 +26,21 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
   const { toast } = useToast();
 
   const startCamera = useCallback(async () => {
+    console.log('Starting camera...');
+    setIsLoading(true);
+    
     try {
       // Check if mediaDevices is available
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Camera not supported');
       }
 
+      console.log('MediaDevices available, requesting camera access...');
+
       // Try with environment camera first, fallback to any camera
       let stream;
       try {
+        console.log('Trying environment camera...');
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: 'environment', // Use back camera
@@ -41,22 +48,26 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
             height: { ideal: 720, max: 1080 }
           }
         });
+        console.log('Environment camera successful');
       } catch (envError) {
-        console.log('Environment camera not available, trying any camera...');
+        console.log('Environment camera not available, trying any camera...', envError);
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             width: { ideal: 1280, max: 1920 },
             height: { ideal: 720, max: 1080 }
           }
         });
+        console.log('Fallback camera successful');
       }
       
       streamRef.current = stream;
+      console.log('Stream obtained, setting up video element...');
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        await videoRef.current.play();
         setIsStreaming(true);
+        console.log('Camera started successfully');
       }
     } catch (error: any) {
       console.error('Camera error:', error);
@@ -86,6 +97,8 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
           description: 'Gagal mengakses kamera. Pastikan perangkat mendukung kamera dan aplikasi berjalan di HTTPS.'
         });
       }
+    } finally {
+      setIsLoading(false);
     }
   }, [toast]);
 
@@ -146,6 +159,7 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
   }, [capturedImage, onCaptureComplete]);
 
   const handleOpenChange = useCallback((open: boolean) => {
+    console.log('Dialog open change:', open);
     setIsOpen(open);
     if (!open) {
       stopCamera();
@@ -155,13 +169,21 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
 
   // Auto-start camera when dialog opens
   useEffect(() => {
-    if (isOpen && !capturedImage) {
+    if (isOpen && !capturedImage && !isStreaming && !isLoading) {
+      console.log('Dialog opened, auto-starting camera...');
       const timer = setTimeout(() => {
         startCamera();
-      }, 100); // Small delay to ensure dialog is rendered
+      }, 300); // Longer delay to ensure dialog is fully rendered
       return () => clearTimeout(timer);
     }
-  }, [isOpen, capturedImage, startCamera]);
+  }, [isOpen, capturedImage, isStreaming, isLoading, startCamera]);
+
+  const handleButtonClick = useCallback(() => {
+    console.log('Camera button clicked, disabled:', disabled);
+    if (!disabled) {
+      console.log('Opening camera dialog...');
+    }
+  }, [disabled]);
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
@@ -170,6 +192,7 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
           variant="outline" 
           disabled={disabled}
           className="w-full"
+          onClick={handleButtonClick}
         >
           <Camera className="w-4 h-4 mr-2" />
           Ambil Foto dari Kamera
@@ -190,10 +213,11 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
               <div className="space-y-4">
                 {!isStreaming ? (
                   <div className="flex flex-col items-center justify-center h-[50vh] sm:h-64 bg-gray-100 rounded-lg">
-                    {isProcessing ? (
+                    {isLoading ? (
                       <>
                         <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
                         <p className="text-gray-600 mb-4">Memulai kamera...</p>
+                        <p className="text-sm text-gray-500">Mohon tunggu sebentar...</p>
                       </>
                     ) : (
                       <>
@@ -201,8 +225,8 @@ export function CameraCapture({ onCaptureComplete, disabled = false }: CameraCap
                         <p className="text-gray-600 mb-4 text-center px-4">
                           Kamera akan dimulai otomatis. Jika tidak muncul, klik tombol di bawah.
                         </p>
-                        <Button onClick={startCamera} disabled={isProcessing}>
-                          {isProcessing ? 'Memproses...' : 'Mulai Kamera'}
+                        <Button onClick={startCamera} disabled={isLoading || isProcessing}>
+                          {isLoading ? 'Memulai...' : 'Mulai Kamera'}
                         </Button>
                       </>
                     )}
