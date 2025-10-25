@@ -143,11 +143,13 @@ export default function PaymentTable({ initialPayments, residents, userRole }: P
       );
     }
 
-    return filteredList.map(payment => (
-      <TableRow key={payment.id}>
-        {canManage && <TableCell className="font-medium">
-          {residentMap.get(payment.residentId) || 'Unknown'}
-        </TableCell>}
+    return filteredList.map(payment => {
+      const resident = residents.find(r => r.id === payment.residentId);
+      return (
+        <TableRow key={payment.id}>
+          {canManage && <TableCell className={`font-medium ${resident?.role === 'admin' ? 'text-red-600' : ''}`}>
+            {residentMap.get(payment.residentId) || 'Unknown'}
+          </TableCell>}
         <TableCell>{getMonthName(payment.month)} {payment.year}</TableCell>
         <TableCell>
           {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(payment.amount)}
@@ -182,8 +184,9 @@ export default function PaymentTable({ initialPayments, residents, userRole }: P
             </DropdownMenuContent>
           </DropdownMenu>
         </TableCell>}
-      </TableRow>
-    ));
+        </TableRow>
+      );
+    });
   };
   
   const tabs = {

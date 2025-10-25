@@ -154,7 +154,9 @@ export default function UsersTable({ initialUsers }: UsersTableProps) {
                 {filteredUsers.length > 0 ? (
                   filteredUsers.map(user => (
                     <TableRow key={user.id}>
-                      <TableCell className="font-medium">{(user.fullName as any) || (user as any).name || ''}</TableCell>
+                      <TableCell className={`font-medium ${user.role === 'admin' ? 'text-red-600' : ''}`}>
+                        {(user.fullName as any) || (user as any).name || ''}
+                      </TableCell>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>{user.houseNumber || (user as any).address || ''}</TableCell>
                       <TableCell>{user.meterId}</TableCell>

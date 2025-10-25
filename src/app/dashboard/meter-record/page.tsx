@@ -192,7 +192,9 @@ export default function MeterRecordPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {users.map(u => (
-                    <SelectItem key={u.id} value={u.id}>{(u.fullName as any) || (u as any).name || u.email || u.id}</SelectItem>
+                    <SelectItem key={u.id} value={u.id} className={u.role === 'admin' ? 'text-red-600' : ''}>
+                      {(u.fullName as any) || (u as any).name || u.email || u.id}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -256,19 +258,24 @@ export default function MeterRecordPage() {
                   {readings.length === 0 ? (
                     <TableRow><TableCell colSpan={isAdmin ? 5 : 4} className="text-center">Belum ada data</TableCell></TableRow>
                   ) : (
-                    readings.map(r => (
-                      <TableRow key={r.id}>
-                        <TableCell>{userMap.get(r.residentId) || r.residentId}</TableCell>
-                        <TableCell>{months.find(m => m.value === r.month)?.label} {r.year}</TableCell>
-                        <TableCell>{r.reading}</TableCell>
-                        <TableCell>{(r as any).recordedAt?.seconds ? format(new Date((r as any).recordedAt.seconds * 1000), 'dd MMM yyyy, HH:mm', { locale: localeId }) : 'Baru saja'}</TableCell>
+                    readings.map(r => {
+                      const user = users.find(u => u.id === r.residentId);
+                      return (
+                        <TableRow key={r.id}>
+                          <TableCell className={user?.role === 'admin' ? 'text-red-600' : ''}>
+                            {userMap.get(r.residentId) || r.residentId}
+                          </TableCell>
+                          <TableCell>{months.find(m => m.value === r.month)?.label} {r.year}</TableCell>
+                          <TableCell>{r.reading}</TableCell>
+                          <TableCell>{(r as any).recordedAt?.seconds ? format(new Date((r as any).recordedAt.seconds * 1000), 'dd MMM yyyy, HH:mm', { locale: localeId }) : 'Baru saja'}</TableCell>
                         {isAdmin && (
                           <TableCell>
                             <Button variant="destructive" size="sm" onClick={() => onDelete(r.id)}>Hapus</Button>
                           </TableCell>
                         )}
-                      </TableRow>
-                    ))
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>
