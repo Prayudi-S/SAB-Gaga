@@ -72,10 +72,12 @@ export default function Header() {
             </Link>
           )}
            {(userProfile?.role === 'admin' || userProfile?.role === 'petugas') && (
-            <Link href="/dashboard/meter-readings" className={navLinkClasses("/dashboard/meter-readings")}>
+            <>
+            <Link href="/dashboard/meter-record" className={navLinkClasses("/dashboard/meter-record")}>
                 <BookText className="h-4 w-4" />
-                Meter Readings
+                Meter Record (New)
             </Link>
+            </>
            )}
         </nav>
       )}

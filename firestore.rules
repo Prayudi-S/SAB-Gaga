@@ -68,9 +68,28 @@ service cloud.firestore {
      * @principle Enforces document ownership for writes, allows admin override.
      */
     match /users/{userId} {
-      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
-      allow list: if false;
-      allow create: if isSignedIn() && isOwner(userId);
+      allow get: if isSignedIn() && (isOwner(userId) || isAdminOrPetugas());
+      allow list: if isSignedIn() && isAdminOrPetugas();
+      allow create: if isSignedIn() && (
+        // owner can create their own profile with required fields and role 'user'
+        (
+          isOwner(userId) &&
+          request.resource.data.keys().hasAll(['fullName','houseNumber','meterId','role']) &&
+          request.resource.data.role == 'user' &&
+          request.resource.data.fullName is string && request.resource.data.fullName.size() > 0 &&
+          request.resource.data.houseNumber is string && request.resource.data.houseNumber.size() > 0 &&
+          request.resource.data.meterId is string && request.resource.data.meterId.size() > 0
+        ) ||
+        // admin can create profiles for others, but role must be strictly 'user'
+        (
+          isAdmin() && !isOwner(userId) &&
+          request.resource.data.keys().hasAll(['fullName','houseNumber','meterId','role']) &&
+          request.resource.data.role == 'user' &&
+          request.resource.data.fullName is string && request.resource.data.fullName.size() > 0 &&
+          request.resource.data.houseNumber is string && request.resource.data.houseNumber.size() > 0 &&
+          request.resource.data.meterId is string && request.resource.data.meterId.size() > 0
+        )
+      );
       allow update: if isSignedIn() && (isOwner(userId) || isAdmin());
       allow delete: if isSignedIn() && (isOwner(userId) || isAdmin());
     }
@@ -102,11 +121,23 @@ service cloud.firestore {
      * @principle Implements role-based access control for meter readings, allowing residents to view their own readings and admins/petugas to manage all readings.
      */
     match /meterReadings/{readingId} {
-      allow get: if isSignedIn() && (isMeterReadingOwner(resource.data.residentId) || isAdminOrPetugas());
-      allow list: if false;
-      allow create: if isSignedIn() && isAdminOrPetugas();
-      allow update: if isSignedIn() && (isAdminOrPetugas() || isMeterReadingOwner(resource.data.residentId));
-      allow delete: if isSignedIn() && isAdminOrPetugas();
+      // Admin & petugas can get/list all readings
+      allow get: if isSignedIn() && isAdminOrPetugas();
+      allow list: if isSignedIn() && isAdminOrPetugas();
+
+      // Create: admin or petugas may record a reading
+      // Validate fields and ensure recordedBy matches caller
+      allow create: if isSignedIn() && isAdminOrPetugas() &&
+        request.resource.data.keys().hasAll(['residentId','reading','month','year','recordedBy','recordedAt']) &&
+        request.resource.data.recordedBy == request.auth.uid &&
+        request.resource.data.residentId is string && request.resource.data.residentId.size() > 0 &&
+        request.resource.data.reading is number && request.resource.data.reading >= 0 &&
+        request.resource.data.month is number && request.resource.data.month >= 1 && request.resource.data.month <= 12 &&
+        request.resource.data.year is number && request.resource.data.year >= 2020;
+
+      // Update/Delete: admin only
+      allow update: if isSignedIn() && isAdmin();
+      allow delete: if isSignedIn() && isAdmin();
     }
   }
 }

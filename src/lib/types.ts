@@ -28,3 +28,14 @@ export type MeterReading = {
   recordedBy: string; // UID of petugas/admin
   recordedAt: unknown; // Firestore serverTimestamp
 };
+
+export type OCRMeterResult = {
+  meterId: string;
+  reading: number;
+  confidence: number;
+};
+
+export type OCRError = {
+  message: string;
+  code: 'CAMERA_ERROR' | 'OCR_ERROR' | 'PARSE_ERROR' | 'PERMISSION_ERROR';
+};

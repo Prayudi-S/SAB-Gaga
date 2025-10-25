@@ -71,7 +71,7 @@ export default function UsersTable({ initialUsers }: UsersTableProps) {
       .then(() => {
         toast({
           title: 'User Deleted',
-          description: `User ${userToDelete.fullName} has been deleted.`,
+          description: `User ${(userToDelete.fullName as any) || (userToDelete as any).name || userToDelete.email || userToDelete.id} has been deleted.`,
         });
         setUsers(prev => prev.filter(u => u.id !== userToDelete.id));
         setUserToDelete(null);
@@ -87,10 +87,12 @@ export default function UsersTable({ initialUsers }: UsersTableProps) {
   };
 
 
-  const filteredUsers = users.filter(user =>
-    user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredUsers = users.filter(user => {
+    const name = ((user.fullName as any) || (user as any).name || '').toLowerCase();
+    const email = (user.email || '').toLowerCase();
+    const term = searchTerm.toLowerCase();
+    return name.includes(term) || email.includes(term);
+  });
 
   const getRoleBadgeVariant = (role: UserProfile['role']) => {
     switch (role) {
@@ -152,9 +154,9 @@ export default function UsersTable({ initialUsers }: UsersTableProps) {
                 {filteredUsers.length > 0 ? (
                   filteredUsers.map(user => (
                     <TableRow key={user.id}>
-                      <TableCell className="font-medium">{user.fullName}</TableCell>
+                      <TableCell className="font-medium">{(user.fullName as any) || (user as any).name || ''}</TableCell>
                       <TableCell>{user.email}</TableCell>
-                      <TableCell>{user.houseNumber}</TableCell>
+                      <TableCell>{user.houseNumber || (user as any).address || ''}</TableCell>
                       <TableCell>{user.meterId}</TableCell>
                       <TableCell>
                         <Badge variant={getRoleBadgeVariant(user.role)}>{user.role}</Badge>

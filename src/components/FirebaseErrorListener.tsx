@@ -11,10 +11,10 @@ export function FirebaseErrorListener() {
     const handleError = (error: FirestorePermissionError) => {
       console.error(error); // We still log the full error for debugging
       
-      // Throw the error in dev to make it visible in the Next.js overlay
-      if (process.env.NODE_ENV === 'development') {
-        throw error;
-      }
+      // Disabled throwing in development to avoid interrupting navigation/rendering
+      // if (process.env.NODE_ENV === 'development') {
+      //   throw error;
+      // }
       
       // Show a generic toast in production
       toast({
